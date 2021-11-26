@@ -31,7 +31,7 @@ namespace HxGLTF
 
         }
 
-        private static void LoadFromFile(string path)
+        private static GLTFFile LoadFromFile(string path)
         {
             var o1 = JObject.Parse(File.ReadAllText(path));
 
@@ -41,6 +41,10 @@ namespace HxGLTF
             var jMeshes = o1["meshes"];
             var jBufferViews = o1["bufferViews"];
             var jBuffers = o1["buffers"];
+            var jImages = o1["images"];
+            var jDummy = o1["dummy"];
+            var jTextures = o1["textures"];
+            var jSamplers = o1["samplers"];
 
             if (jBuffers == null || jBufferViews == null || jAsset == null)
             {
@@ -110,6 +114,65 @@ namespace HxGLTF
                 
                 bufferViews[i] = bufferView;
             }
+            
+            var samplers = new Sampler[jSamplers.Count()];
+            for (var i = 0; i < jSamplers.Count(); i++)
+            {
+                var jToken = jSamplers[i];
+                
+                var sampler = new Sampler()
+                {
+                    WrapS = (int)jToken?["wrapS"],
+                    WrapT = (int)jToken?["wrapT"],
+                    MinFilter = (int)jToken?["minFilter"],
+                    MagFilter = (int)jToken?["magFilter"]
+                };
+                
+                samplers[i] = sampler;
+            }
+            
+            var images = new Image[jImages.Count()];
+            for (var i = 0; i < jImages.Count(); i++)
+            {
+                var jToken = jImages[i];
+                
+                var image = new Image
+                {
+                    Uri = (string)jToken?["uri"]
+                };
+
+                if (image.Uri == null)
+                {
+                    throw new Exception();
+                }
+
+                if (Path.IsPathRooted(image.Uri))
+                {
+                    if (!File.Exists(image.Uri))
+                    {
+                        throw new FileNotFoundException();
+                    }
+                }
+                else
+                {
+                    var combinedPath = Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, image.Uri);
+                    if (!File.Exists(combinedPath))
+                    {
+                        throw new FileNotFoundException();
+                    }
+                }
+                
+                images[i] = image;
+            }
+
+            return new GLTFFile()
+            {
+                Asset = asset,
+                Buffers = buffers,
+                BufferViews = bufferViews,
+                Images = images,
+                Samplers = samplers
+            };
         }
     }
 }

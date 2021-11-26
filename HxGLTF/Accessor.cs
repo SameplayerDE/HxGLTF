@@ -24,13 +24,13 @@ namespace HxGLTF
     
     public class Type
     {
-        public static Type Scalar = new Type("SCALAR", 1);
-        public static Type Vec2   = new Type("VEC2", 2);
-        public static Type Vec3   = new Type("VEC3", 3);
-        public static Type Vec4   = new Type("VEC4", 4);
-        public static Type Mat2   = new Type("MAT2", 4);
-        public static Type Mat3   = new Type("MAT3", 9);
-        public static Type Mat4   = new Type("MAT4", 16);
+        public readonly static Type Scalar = new Type("SCALAR", 1);
+        public readonly static Type Vec2   = new Type("VEC2", 2);
+        public readonly static Type Vec3   = new Type("VEC3", 3);
+        public readonly static Type Vec4   = new Type("VEC4", 4);
+        public readonly static Type Mat2   = new Type("MAT2", 4);
+        public readonly static Type Mat3   = new Type("MAT3", 9);
+        public readonly static Type Mat4   = new Type("MAT4", 16);
 
         private static Dictionary<string, Type> _types = new Dictionary<string, Type>()
         {
