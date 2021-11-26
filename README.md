@@ -1,2 +1,2 @@
 # HxGLTF
-Load glTF files for monogame
+Load glTF files in a class structure to use in code
