@@ -9,7 +9,7 @@ namespace HxGLTF
 {
     public class GLTFLoader
     {
-        public static void Load(string path)
+        public static GLTFFile Load(string path)
         {
             if (Directory.Exists(path))
             {
@@ -27,8 +27,7 @@ namespace HxGLTF
                 throw new FileLoadException("file could not be loaded, wrong file type");
             }
 
-            LoadFromFile(path);
-
+            return LoadFromFile(path);
         }
 
         private static GLTFFile LoadFromFile(string path)
