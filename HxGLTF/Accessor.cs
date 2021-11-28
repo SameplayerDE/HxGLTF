@@ -9,16 +9,44 @@ namespace HxGLTF
         public static ComponentType T5121 = new ComponentType(5121, 8);
         public static ComponentType T5122 = new ComponentType(5122, 16);
         public static ComponentType T5123 = new ComponentType(5123, 16);
-        public static ComponentType T5124 = new ComponentType(5124, 32);
         public static ComponentType T5125 = new ComponentType(5125, 32);
+        public static ComponentType T5126 = new ComponentType(5126, 32);
         
-        private int _id;
-        private int _bits;
+        private static Dictionary<int, ComponentType> _types = new Dictionary<int, ComponentType>()
+        {
+            {T5120.Id, T5120},
+            {T5121.Id, T5121},
+            {T5122.Id, T5122},
+            {T5123.Id, T5123},
+            {T5125.Id, T5125},
+            {T5126.Id, T5126}
+        };
+
+        public int Id { get; }
+        public int Bits { get; }
 
         private ComponentType(int id, int bits)
         {
-            _id = id;
-            _bits = bits;
+            Id = id;
+            Bits = bits;
+        }
+        
+        /*
+        public override bool Equals(object obj)
+        {
+            var item = obj is int i ? i : 0;
+            return this.Id.Equals(item);
+        }
+
+        public override int GetHashCode()
+        {
+            return this.Id.GetHashCode();
+        }
+        */
+        
+        public static ComponentType FromInt(int type)
+        {
+            return _types.ContainsKey(type) ? _types[type] : null;
         }
     }
     
@@ -34,27 +62,38 @@ namespace HxGLTF
 
         private static Dictionary<string, Type> _types = new Dictionary<string, Type>()
         {
-            {Scalar._id, Scalar},
-            {Vec2._id, Vec2},
-            {Vec3._id, Vec3},
-            {Vec4._id, Vec4},
-            {Mat2._id, Mat2},
-            {Mat3._id, Mat3},
-            {Mat4._id, Mat4},
+            {Scalar.Id, Scalar},
+            {Vec2.Id, Vec2},
+            {Vec3.Id, Vec3},
+            {Vec4.Id, Vec4},
+            {Mat2.Id, Mat2},
+            {Mat3.Id, Mat3},
+            {Mat4.Id, Mat4},
         };
 
-        private string _id;
-        private int _bits;
+        public string Id { get; }
+        public int NumberOfComponents { get; }
 
-        public string Id => _id;
-        public int Bits => _bits;
-
-        private Type(string id, int bits)
+        private Type(string id, int numberOfComponents)
         {
-            _id = id;
-            _bits = bits;
+            Id = id;
+            NumberOfComponents = numberOfComponents;
         }
 
+        /*
+        public override bool Equals(object obj)
+        {
+            var item = obj as string;
+
+            return item != string.Empty && this.Id.Equals(item);
+        }
+
+        public override int GetHashCode()
+        {
+            return this.Id.GetHashCode();
+        }
+        */
+        
         public static Type FromSting(string type)
         {
             return _types.ContainsKey(type.ToUpper()) ? _types[type.ToUpper()] : null;
