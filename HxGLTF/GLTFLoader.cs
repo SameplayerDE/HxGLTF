@@ -89,6 +89,7 @@ namespace HxGLTF
             var jImages = o1["images"];
             var jDummy = o1["dummy"];
             var jTextures = o1["textures"];
+            var jMaterials = o1["materials"];
             var jSamplers = o1["samplers"];
             var jAccessors = o1["accessors"];
 
@@ -201,11 +202,11 @@ namespace HxGLTF
             var images = new Image[jImages.Count()];
             for (var i = 0; i < jImages.Count(); i++)
             {
-                var jToken = jImages[i];
+                var jObject = jImages[i];
                 
                 var image = new Image
                 {
-                    Uri = (string)jToken?["uri"]
+                    Uri = (string)jObject?["uri"]
                 };
 
                 if (image.Uri == null)
@@ -217,7 +218,7 @@ namespace HxGLTF
                 {
                     if (!File.Exists(image.Uri))
                     {
-                        throw new FileNotFoundException("images specified in glb file could not be found");
+                        throw new FileNotFoundException("images specified in gltf file could not be found");
                     }
                 }
                 else
@@ -225,13 +226,56 @@ namespace HxGLTF
                     var combinedPath = Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, image.Uri);
                     if (!File.Exists(combinedPath))
                     {
-                        throw new FileNotFoundException("images specified in glb file could not be found");
+                        throw new FileNotFoundException("images specified in gltf file could not be found");
                     }
                 }
                 
                 images[i] = image;
             }
+            
+            var textures = new Texture[jTextures.Count()];
+            for (var i = 0; i < jTextures.Count(); i++)
+            {
+                var jObject = jTextures[i];
+                
+                var texture = new Texture()
+                {
+                    Sampler = samplers[(int)jObject?["sampler"]] ?? null,
+                    Source = images[(int)jObject?["source"]]
+                };
+                textures[i] = texture;
+            }
+            
+            var materials = new Material[jMaterials.Count()];
+            for (var i = 0; i < jMaterials.Count(); i++)
+            {
+                var jObject = (JObject)jMaterials[i];
+                
+                var material = new Material()
+                {
+                    Name = (string)(jObject?["name"] ?? string.Empty),
+                    AlphaMode = (string)(jObject?["alphaMode"] ?? string.Empty),
+                    //MetallicFactor = (int)(jObject?["metallicFactor"] ?? 0)
+                };
 
+                if (jObject.ContainsKey("pbrMetallicRoughness"))
+                {
+                    var pbr = (JObject)jObject["pbrMetallicRoughness"];
+                    if (pbr.ContainsKey("baseColorTexture"))
+                    {
+                        var baseColorTexture = (JObject)pbr["baseColorTexture"];
+                        material.BaseColorTexture = textures[(int)baseColorTexture["index"]];
+                    }
+                }
+                
+                for (var j = 0; j < jObject.Count; j++)
+                {
+                    
+                }
+
+                materials[i] = material;
+            }
+            
             var meshes = new Mesh[jMeshes.Count()];
             for (var i = 0; i < jMeshes.Count(); i++)
             {
@@ -260,9 +304,10 @@ namespace HxGLTF
                     var primitive = new Primitive()
                     { 
                         Attributes = attributes,
-                        Indices = (int)(jPrimitiveObject["indices"] ?? null),
-                        Material = (int)(jPrimitiveObject["material"] ?? null)
+                        Indices = (jPrimitiveObject["indices"] ?? null) != null ? accessors[(int)jPrimitiveObject["indices"]] : null,
+                        Material = (jPrimitiveObject["material"] ?? null) != null ? materials[(int)jPrimitiveObject["material"]] : null
                     };
+                    
                     primitives[j] = primitive;
                     //Console.WriteLine((string)jMeshPrimitiveToken);
                 }
@@ -278,12 +323,15 @@ namespace HxGLTF
 
             return new GLTFFile()
             {
+                FilePath = path,
                 Asset = asset,
                 Buffers = buffers,
                 BufferViews = bufferViews,
                 Accessors = accessors,
                 Images = images,
                 Samplers = samplers,
+                Textures = textures,
+                Materials = materials,
                 Meshes = meshes
             };
         }
@@ -302,6 +350,7 @@ namespace HxGLTF
             var jImages = o1["images"];
             var jDummy = o1["dummy"];
             var jTextures = o1["textures"];
+            var jMaterials = o1["materials"];
             var jSamplers = o1["samplers"];
             var jAccessors = o1["accessors"];
 
@@ -435,6 +484,49 @@ namespace HxGLTF
                 images[i] = image;
             }
             
+            var textures = new Texture[jTextures.Count()];
+            for (var i = 0; i < jTextures.Count(); i++)
+            {
+                var jObject = jTextures[i];
+                
+                var texture = new Texture()
+                {
+                    Sampler = samplers[(int)jObject?["sampler"]] ?? null,
+                    Source = images[(int)jObject?["source"]]
+                };
+                textures[i] = texture;
+            }
+            
+            var materials = new Material[jMaterials.Count()];
+            for (var i = 0; i < jMaterials.Count(); i++)
+            {
+                var jObject = (JObject)jMaterials[i];
+                
+                var material = new Material()
+                {
+                    Name = (string)(jObject?["name"] ?? string.Empty),
+                    AlphaMode = (string)(jObject?["alphaMode"] ?? string.Empty),
+                    //MetallicFactor = (int)(jObject?["metallicFactor"] ?? 0)
+                };
+
+                if (jObject.ContainsKey("pbrMetallicRoughness"))
+                {
+                    var pbr = (JObject)jObject["pbrMetallicRoughness"];
+                    if (pbr.ContainsKey("baseColorTexture"))
+                    {
+                        var baseColorTexture = (JObject)pbr["baseColorTexture"];
+                        material.BaseColorTexture = textures[(int)baseColorTexture["index"]];
+                    }
+                }
+                
+                for (var j = 0; j < jObject.Count; j++)
+                {
+                    
+                }
+
+                materials[i] = material;
+            }
+            
             var meshes = new Mesh[jMeshes.Count()];
             for (var i = 0; i < jMeshes.Count(); i++)
             {
@@ -463,9 +555,10 @@ namespace HxGLTF
                     var primitive = new Primitive()
                     { 
                         Attributes = attributes,
-                        Indices = (int)(jPrimitiveObject["indices"] ?? null),
-                        Material = (int)(jPrimitiveObject["material"] ?? null)
+                        Indices = (jPrimitiveObject["indices"] ?? null) != null ? accessors[(int)jPrimitiveObject["indices"]] : null,
+                        Material = (jPrimitiveObject["material"] ?? null) != null ? materials[(int)jPrimitiveObject["material"]] : null
                     };
+                    
                     primitives[j] = primitive;
                     //Console.WriteLine((string)jMeshPrimitiveToken);
                 }
@@ -481,14 +574,102 @@ namespace HxGLTF
 
             return new GLTFFile()
             {
+                FilePath = path,
                 Asset = asset,
                 Buffers = buffers,
                 BufferViews = bufferViews,
                 Accessors = accessors,
                 Images = images,
                 Samplers = samplers,
+                Textures = textures,
+                Materials = materials,
                 Meshes = meshes
             };
         }
+        
+        public static float[] ReadAccessor(Accessor accessor)
+        {
+
+            var result = new List<float>();
+            
+            var elementCount = accessor.Count;
+            var numberOfComponents = accessor.Type.NumberOfComponents;
+            var bitsPerComponent = accessor.ComponentType.Bits;
+            var bytesPerComponent = bitsPerComponent / 8;
+            var byteStride = accessor.BufferView.ByteStride;
+            var totalAmountOfBytes = bytesPerComponent * numberOfComponents * elementCount;// * (byteStride != 0 ? byteStride : 1);
+            var totalByteOffset = accessor.ByteOffset + accessor.BufferView.ByteOffset;
+
+            var stream = new MemoryStream(accessor.BufferView.Buffer.Bytes);
+            stream.Position = totalByteOffset;
+            var data = new byte[totalAmountOfBytes];
+            stream.Read(data, 0, totalAmountOfBytes);
+
+            /*
+            Console.WriteLine("ComponentType: " + accessor.ComponentType.Id);
+            Console.WriteLine("ComponentTypeBits: " + bitsPerComponent);
+            Console.WriteLine("ComponentTypeByte: " + bytesPerComponent);
+            Console.WriteLine("Type: " + accessor.Type.Id);
+            Console.WriteLine("ComponentCount: " + numberOfComponents);
+            Console.WriteLine("ElementCount: " + elementCount);
+            Console.WriteLine("ByteStride: " + byteStride);
+            Console.WriteLine("TotalAmountOfBytes: " + totalAmountOfBytes);
+            Console.WriteLine("BufferViewByteAmount: " + accessor.BufferView.ByteLength);
+            */
+
+            var bytes = new List<byte>();
+            var value = 0.0f;
+            for (var i = 0; i < totalAmountOfBytes; i += numberOfComponents * bytesPerComponent)
+            {
+                for (var k = 0; k < numberOfComponents * bytesPerComponent; k += bytesPerComponent)
+                {
+                    //Console.Write("    ");
+                    bytes.Clear();
+                    for (var j = 0; j < bytesPerComponent; j++)
+                    {
+                        //Console.Write($"0x{data[i + j + k]:X2} ");
+                        bytes.Add(data[i + j + k]);
+                    }
+
+                    if (accessor.ComponentType.Equals(ComponentType.T5126))
+                    {
+                        value = BitConverter.ToSingle(bytes.ToArray(), 0);
+                    }
+                    else if (accessor.ComponentType.Equals(ComponentType.T5125))
+                    {
+                        value = BitConverter.ToUInt32(bytes.ToArray(), 0);
+                    }
+                    else if (accessor.ComponentType.Equals(ComponentType.T5123))
+                    {
+                        value = BitConverter.ToUInt16(bytes.ToArray(), 0);
+                    }
+                    else if (accessor.ComponentType.Equals(ComponentType.T5122))
+                    {
+                        value = BitConverter.ToInt16(bytes.ToArray(), 0);
+                    }
+                    else if (accessor.ComponentType.Equals(ComponentType.T5121))
+                    {
+                        try
+                        {
+                            value = Convert.ToSByte(bytes.ToArray()[0]);
+                        }
+                        catch (OverflowException)
+                        {
+                            value = Convert.ToByte(bytes.ToArray()[0]);
+                        }
+                    }
+                    else if (accessor.ComponentType.Equals(ComponentType.T5120))
+                    {
+                        value = Convert.ToByte(bytes.ToArray()[0]);
+                    }
+                    result.Add(value);
+                    //Console.Write($" = {value}");
+                    //Console.Write($"\n");
+                }
+                //i += byteStride;
+            }
+            return result.ToArray();
+        }
+        
     }
 }

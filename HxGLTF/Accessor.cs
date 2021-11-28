@@ -107,5 +107,10 @@ namespace HxGLTF
         public ComponentType ComponentType;
         public int Count;
         public Type Type;
+
+        public int TotalComponentCount => Type.NumberOfComponents * Count;
+        public int BitsPerComponent => ComponentType.Bits;
+        public int BytesPerComponent => ComponentType.Bits / 8;
+        public int TotalByteCount => BytesPerComponent * TotalComponentCount;
     }
 }
