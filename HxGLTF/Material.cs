@@ -6,5 +6,6 @@
         public Texture BaseColorTexture;
         public int MetallicFactor;
         public string AlphaMode;
+        public bool DoubleSided;
     }
 }

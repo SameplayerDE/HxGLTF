@@ -255,6 +255,7 @@ namespace HxGLTF
                 {
                     Name = (string)(jObject?["name"] ?? string.Empty),
                     AlphaMode = (string)(jObject?["alphaMode"] ?? string.Empty),
+                    DoubleSided = (bool)(jObject?["doubleSided"] ?? false),
                     //MetallicFactor = (int)(jObject?["metallicFactor"] ?? 0)
                 };
 
@@ -506,6 +507,7 @@ namespace HxGLTF
                 {
                     Name = (string)(jObject?["name"] ?? string.Empty),
                     AlphaMode = (string)(jObject?["alphaMode"] ?? string.Empty),
+                    DoubleSided = (bool)(jObject?["doubleSided"] ?? false),
                     //MetallicFactor = (int)(jObject?["metallicFactor"] ?? 0)
                 };
 

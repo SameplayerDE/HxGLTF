@@ -10,5 +10,7 @@ namespace TrivialHxGLTF
         public int MetallicFactor;
         [JsonProperty("alphaMode")]
         public string AlphaMode;
+        [JsonProperty("doubleSided")]
+        public bool DoubleSided;
     }
 }
