@@ -96,6 +96,10 @@ namespace HxGLTF
         
         public static Type FromSting(string type)
         {
+            if (type == null)
+            {
+                return null;
+            }
             return _types.ContainsKey(type.ToUpper()) ? _types[type.ToUpper()] : null;
         }
     }

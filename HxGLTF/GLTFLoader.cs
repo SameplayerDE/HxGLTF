@@ -188,6 +188,11 @@ namespace HxGLTF
             {
                 var jToken = jSamplers[i];
                 
+                if (!jToken.HasValues)
+                {
+                    continue;
+                }
+                
                 var sampler = new Sampler()
                 {
                     WrapS = (int)jToken?["wrapS"],
@@ -436,9 +441,15 @@ namespace HxGLTF
             }
             
             var samplers = new Sampler[jSamplers.Count()];
+            Console.WriteLine(jSamplers.Count());
             for (var i = 0; i < jSamplers.Count(); i++)
             {
                 var jObject = jSamplers[i];
+
+                if (!jObject.HasValues)
+                {
+                    continue;
+                }
                 
                 var sampler = new Sampler()
                 {
