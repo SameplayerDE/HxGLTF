@@ -28,12 +28,7 @@ namespace HxGLTF
                 throw new FileLoadException("file could not be loaded, wrong file type");
             }
             
-            if (extension.Equals(".glb"))
-            {
-                return LoadFromGLBFile(path);
-            }
-            
-            return LoadFromGLTFFile(path);
+            return extension.Equals(".glb") ? LoadFromGLBFile(path) : LoadFromGLTFFile(path);
         }
         
         // ReSharper disable once InconsistentNaming
@@ -222,7 +217,7 @@ namespace HxGLTF
                 {
                     if (!File.Exists(image.Uri))
                     {
-                        throw new FileNotFoundException();
+                        throw new FileNotFoundException("images specified in glb file could not be found");
                     }
                 }
                 else
@@ -230,11 +225,55 @@ namespace HxGLTF
                     var combinedPath = Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, image.Uri);
                     if (!File.Exists(combinedPath))
                     {
-                        throw new FileNotFoundException();
+                        throw new FileNotFoundException("images specified in glb file could not be found");
                     }
                 }
                 
                 images[i] = image;
+            }
+
+            var meshes = new Mesh[jMeshes.Count()];
+            for (var i = 0; i < jMeshes.Count(); i++)
+            {
+                var jMeshToken = jMeshes[i];
+                var jMeshPrimitiveToken = jMeshToken?["primitives"];
+                
+                var primitives = new Primitive[jMeshPrimitiveToken.Count()];
+                for (var j = 0; j < jMeshPrimitiveToken.Count(); j++)
+                {
+
+                    var jPrimitiveObject = (JObject)jMeshPrimitiveToken?[j];
+                    var jMeshPrimitiveAttribute = (JObject)jPrimitiveObject["attributes"];
+                    var attributes = new Attribute[jMeshPrimitiveAttribute.Count];
+
+                    var x = 0;
+                    foreach (var attributeData in jMeshPrimitiveAttribute)
+                    {
+                        var attribute = new Attribute()
+                        {
+                            Type = attributeData.Key,
+                            Accessor = accessors[(int)attributeData.Value]
+                        };
+                        attributes[x] = attribute;
+                        x++;
+                    }
+                    var primitive = new Primitive()
+                    { 
+                        Attributes = attributes,
+                        Indices = (int)(jPrimitiveObject["indices"] ?? null),
+                        Material = (int)(jPrimitiveObject["material"] ?? null)
+                    };
+                    primitives[j] = primitive;
+                    //Console.WriteLine((string)jMeshPrimitiveToken);
+                }
+                
+                var mesh = new Mesh()
+                {
+                    Name = (string)(jMeshToken?["name"] ?? string.Empty),
+                    Primitives = primitives
+                };
+                
+                meshes[i] = mesh;
             }
 
             return new GLTFFile()
@@ -244,7 +283,8 @@ namespace HxGLTF
                 BufferViews = bufferViews,
                 Accessors = accessors,
                 Images = images,
-                Samplers = samplers
+                Samplers = samplers,
+                Meshes = meshes
             };
         }
 
@@ -317,14 +357,14 @@ namespace HxGLTF
             var bufferViews = new BufferView[jBufferViews.Count()];
             for (var i = 0; i < jBufferViews.Count(); i++)
             {
-                var jToken = jBufferViews[i];
+                var jObject = jBufferViews[i];
                 
                 var bufferView = new BufferView
                 {
-                    Buffer = buffers[(int)jToken?["buffer"]],
-                    ByteLength = (int)jToken?["byteLength"],
-                    ByteOffset = (int)jToken?["byteOffset"],
-                    ByteStride = (int)(jToken?["byteStride"] ?? 0)
+                    Buffer = buffers[(int)jObject?["buffer"]],
+                    ByteLength = (int)jObject?["byteLength"],
+                    ByteOffset = (int)jObject?["byteOffset"],
+                    ByteStride = (int)(jObject?["byteStride"] ?? 0)
                 };
                 bufferViews[i] = bufferView;
             }
@@ -332,15 +372,15 @@ namespace HxGLTF
             var accessors = new Accessor[jAccessors.Count()];
             for (var i = 0; i < jAccessors.Count(); i++)
             {
-                var jToken = jAccessors[i];
+                var jObject = jAccessors[i];
                 
                 var accessor = new Accessor
                 {
-                    BufferView = bufferViews[(int)jToken?["bufferView"]],
-                    ByteOffset = (int)(jToken?["byteOffset"] ?? 0),
-                    Count = (int)jToken?["count"],
-                    ComponentType = ComponentType.FromInt((int)jToken?["componentType"]),
-                    Type = Type.FromSting((string)jToken?["type"])
+                    BufferView = bufferViews[(int)jObject?["bufferView"]],
+                    ByteOffset = (int)(jObject?["byteOffset"] ?? 0),
+                    Count = (int)jObject?["count"],
+                    ComponentType = ComponentType.FromInt((int)jObject?["componentType"]),
+                    Type = Type.FromSting((string)jObject?["type"])
                 };
                 accessors[i] = accessor;
             }
@@ -348,14 +388,14 @@ namespace HxGLTF
             var samplers = new Sampler[jSamplers.Count()];
             for (var i = 0; i < jSamplers.Count(); i++)
             {
-                var jToken = jSamplers[i];
+                var jObject = jSamplers[i];
                 
                 var sampler = new Sampler()
                 {
-                    WrapS = (int)jToken?["wrapS"],
-                    WrapT = (int)jToken?["wrapT"],
-                    MinFilter = (int)jToken?["minFilter"],
-                    MagFilter = (int)jToken?["magFilter"]
+                    WrapS = (int)jObject?["wrapS"],
+                    WrapT = (int)jObject?["wrapT"],
+                    MinFilter = (int)jObject?["minFilter"],
+                    MagFilter = (int)jObject?["magFilter"]
                 };
                 
                 samplers[i] = sampler;
@@ -364,11 +404,11 @@ namespace HxGLTF
             var images = new Image[jImages.Count()];
             for (var i = 0; i < jImages.Count(); i++)
             {
-                var jToken = jImages[i];
+                var jObject = jImages[i];
                 
                 var image = new Image
                 {
-                    Uri = (string)jToken?["uri"]
+                    Uri = (string)jObject?["uri"]
                 };
 
                 if (image.Uri == null)
@@ -380,7 +420,7 @@ namespace HxGLTF
                 {
                     if (!File.Exists(image.Uri))
                     {
-                        throw new FileNotFoundException();
+                        throw new FileNotFoundException("images specified in gltf file could not be found");
                     }
                 }
                 else
@@ -388,11 +428,55 @@ namespace HxGLTF
                     var combinedPath = Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, image.Uri);
                     if (!File.Exists(combinedPath))
                     {
-                        throw new FileNotFoundException();
+                        throw new FileNotFoundException("images specified in gltf file could not be found");
                     }
                 }
                 
                 images[i] = image;
+            }
+            
+            var meshes = new Mesh[jMeshes.Count()];
+            for (var i = 0; i < jMeshes.Count(); i++)
+            {
+                var jMeshToken = jMeshes[i];
+                var jMeshPrimitiveToken = jMeshToken?["primitives"];
+                
+                var primitives = new Primitive[jMeshPrimitiveToken.Count()];
+                for (var j = 0; j < jMeshPrimitiveToken.Count(); j++)
+                {
+
+                    var jPrimitiveObject = (JObject)jMeshPrimitiveToken?[j];
+                    var jMeshPrimitiveAttribute = (JObject)jPrimitiveObject["attributes"];
+                    var attributes = new Attribute[jMeshPrimitiveAttribute.Count];
+
+                    var x = 0;
+                    foreach (var attributeData in jMeshPrimitiveAttribute)
+                    {
+                        var attribute = new Attribute()
+                        {
+                            Type = attributeData.Key,
+                            Accessor = accessors[(int)attributeData.Value]
+                        };
+                        attributes[x] = attribute;
+                        x++;
+                    }
+                    var primitive = new Primitive()
+                    { 
+                        Attributes = attributes,
+                        Indices = (int)(jPrimitiveObject["indices"] ?? null),
+                        Material = (int)(jPrimitiveObject["material"] ?? null)
+                    };
+                    primitives[j] = primitive;
+                    //Console.WriteLine((string)jMeshPrimitiveToken);
+                }
+                
+                var mesh = new Mesh()
+                {
+                    Name = (string)(jMeshToken?["name"] ?? string.Empty),
+                    Primitives = primitives
+                };
+                
+                meshes[i] = mesh;
             }
 
             return new GLTFFile()
@@ -402,7 +486,8 @@ namespace HxGLTF
                 BufferViews = bufferViews,
                 Accessors = accessors,
                 Images = images,
-                Samplers = samplers
+                Samplers = samplers,
+                Meshes = meshes
             };
         }
     }

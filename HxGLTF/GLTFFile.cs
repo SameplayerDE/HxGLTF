@@ -9,5 +9,6 @@
         public Accessor[] Accessors;
         public Sampler[] Samplers;
         public Image[] Images;
+        public Mesh[] Meshes;
     }
 }
