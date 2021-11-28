@@ -1,10 +1,19 @@
-﻿namespace TrivialHxGLTF
+﻿using System.Collections.Generic;
+using Newtonsoft.Json;
+
+namespace TrivialHxGLTF
 {
     public class Primitive
     {
-        public Attribute[] Attributes;
-        public int Indices;
-        public int Material; //TODO Create Material Class
-        public int Mode; //TODO Create Mode Class
+        [JsonProperty("attributes")]
+        public Dictionary<string, int> Attributes;
+        [JsonProperty("targets")]
+        public Dictionary<string, int>[]? Targets;
+        [JsonProperty("indices")]
+        public int? Indices; //Index Of Accessor
+        [JsonProperty("material")]
+        public int? Material; //Index Of Material
+        [JsonProperty("mode")]
+        public int? Mode; 
     }
 }

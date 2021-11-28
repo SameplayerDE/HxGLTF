@@ -1,10 +1,16 @@
-﻿namespace TrivialHxGLTF
+﻿using Newtonsoft.Json;
+
+namespace TrivialHxGLTF
 {
     public class BufferView
     {
-        public int Buffer;
-        public int ByteLength;
-        public int ByteOffset;
-        public int ByteStride;
+        [JsonProperty("buffer")]
+        public int? Buffer;
+        [JsonProperty("byteLength")]
+        public int? ByteLength;
+        [JsonProperty("byteOffset")]
+        public int? ByteOffset;
+        [JsonProperty("byteStride")]
+        public int? ByteStride;
     }
 }

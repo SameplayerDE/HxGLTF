@@ -1,11 +1,14 @@
 ﻿using System;
+using Newtonsoft.Json;
 
 namespace TrivialHxGLTF
 {
     public class Buffer
     {
-        public int ByteLength;
-        public string Uri;
+        [JsonProperty("byteLenght")]
+        public int? ByteLength;
+        [JsonProperty("uri")]
+        public string? Uri;
 
     }
 }

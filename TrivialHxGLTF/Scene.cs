@@ -1,8 +1,12 @@
-﻿namespace TrivialHxGLTF
+﻿using Newtonsoft.Json;
+
+namespace TrivialHxGLTF
 {
     public class Scene
     {
+        [JsonProperty("name")]
         public string Name;
-        public Node[] Nodes;
+        [JsonProperty("nodes")]
+        public int[] Nodes;
     }
 }
