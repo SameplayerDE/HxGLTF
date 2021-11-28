@@ -4,6 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HxGLTF", "HxGLTF\HxGLTF.csp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DebugApp", "DebugApp\DebugApp.csproj", "{637B87D7-1944-4828-A479-9923612C9D8F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrivialHxGLTF", "TrivialHxGLTF\TrivialHxGLTF.csproj", "{390A0AE5-FE20-45E6-9039-395D5BB60568}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{637B87D7-1944-4828-A479-9923612C9D8F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{637B87D7-1944-4828-A479-9923612C9D8F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{637B87D7-1944-4828-A479-9923612C9D8F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{390A0AE5-FE20-45E6-9039-395D5BB60568}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{390A0AE5-FE20-45E6-9039-395D5BB60568}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{390A0AE5-FE20-45E6-9039-395D5BB60568}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{390A0AE5-FE20-45E6-9039-395D5BB60568}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
