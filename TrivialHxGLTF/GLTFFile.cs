@@ -5,6 +5,9 @@ namespace TrivialHxGLTF
     // ReSharper disable once InconsistentNaming
     public class GLTFFile
     {
+
+        public string Path;
+        
         [JsonProperty("asset")]
         public Asset Asset;
 

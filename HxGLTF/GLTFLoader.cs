@@ -1,688 +1,796 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Net;
+﻿using Microsoft.Xna.Framework;
 using Newtonsoft.Json.Linq;
+using System.Xml.Linq;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace HxGLTF
 {
-    // ReSharper disable once InconsistentNaming
     public class GLTFLoader
     {
         public static GLTFFile Load(string path)
         {
-            if (Directory.Exists(path))
+            if (string.IsNullOrEmpty(path))
             {
-                throw new Exception("passed directory path");
+                throw new ArgumentNullException(nameof(path), "File path cannot be null or empty.");
             }
-            
+
+            ValidateFileExists(path);
+
+            using (var fileStream = File.OpenRead(path))
+            {
+                var extension = Path.GetExtension(path);
+                ValidateFileType(extension);
+
+                byte[]? glbBytes = null;
+                string? json = null;
+                byte[]? binary = null;
+
+                if (extension.Equals(".glb"))
+                {
+                    glbBytes = ExtractGLBBytes(fileStream);
+                    json = ExtractJSONFromGLB(glbBytes);
+                    binary = ExtractBinaryFromGLB(glbBytes, json.Length);
+                }
+                else
+                {
+                    json = ExtractJSONFromFile(fileStream);
+                }
+
+                return LoadFromJsonWithBinary(path, json, binary);
+            }
+        }
+
+        private static void ValidateFileExists(string path)
+        {
             if (!File.Exists(path))
             {
-                throw new FileNotFoundException("file could not be found");
+                throw new FileNotFoundException("File not found.", path);
             }
+        }
 
-            var extension = Path.GetExtension(path);
+        private static void ValidateFileType(string extension)
+        {
             if (!extension.Equals(".gltf") && !extension.Equals(".glb"))
             {
-                throw new FileLoadException("file could not be loaded, wrong file type");
+                throw new FileLoadException("Invalid file type.");
             }
-            
-            return extension.Equals(".glb") ? LoadFromGLBFile(path) : LoadFromGLTFFile(path);
         }
-        
-        // ReSharper disable once InconsistentNaming
-        private static GLTFFile LoadFromGLBFile(string path)
+
+        private static byte[] ExtractGLBBytes(FileStream fileStream)
         {
-            var glbBytes = File.ReadAllBytes(path);
-            var stream = new MemoryStream(glbBytes);
+            var glbBytes = new byte[fileStream.Length];
+            fileStream.Read(glbBytes, 0, glbBytes.Length);
+            return glbBytes;
+        }
+
+        private static string ExtractJSONFromGLB(byte[] glbBytes)
+        {
+            if (glbBytes.Length < 20)
+            {
+                throw new Exception("Invalid GLB file format.");
+            }
 
             var magic = BitConverter.ToUInt32(glbBytes, 0);
-
             if (magic != 0x46546C67)
             {
-                throw new Exception("file is damaged");
+                throw new Exception("Invalid GLB file format.");
             }
 
-            var version = BitConverter.ToUInt32(glbBytes, 4);
-            var length = BitConverter.ToUInt32(glbBytes, 8);
-            
-            var chunkLenght0 = BitConverter.ToUInt32(glbBytes, 12);
-            var chunkType0 = BitConverter.ToUInt32(glbBytes, 16);
-            
-            var chunkLenght1 = BitConverter.ToUInt32(glbBytes, 20 + (int)chunkLenght0);
-            var chunkType1 = BitConverter.ToUInt32(glbBytes, 20 + (int)chunkLenght0 + 4);
-            
-            stream.Position = 20;
-            var chunkData0 = new byte[chunkLenght0];
-            stream.Read(chunkData0, 0, (int)chunkLenght0);
-            var json = System.Text.Encoding.UTF8.GetString(chunkData0);
-            
-            stream.Position = 20 + (int)chunkLenght0 + 8;
-            var chunkData1 = new byte[chunkLenght1];
-            stream.Read(chunkData1, 0, (int)chunkLenght1);
-            var array = chunkData1;
-            
-            if (chunkType1 == 0x004E4942) //Binary
+            var chunkLength0 = BitConverter.ToUInt32(glbBytes, 12);
+            if (glbBytes.Length < chunkLength0 + 20)
             {
-                
-            }
-            else if (chunkType0 == 0x4E4F534A) //Json
-            {
-                
+                throw new Exception("Invalid GLB file format.");
             }
 
-            return LoadFromJsonWithByteArray(path, json, array);
+            return System.Text.Encoding.UTF8.GetString(glbBytes, 20, (int)chunkLength0);
         }
-        
-        // ReSharper disable once InconsistentNaming
-        private static GLTFFile LoadFromJsonWithByteArray(string path, string json, byte[] array)
+
+        private static string ExtractJSONFromFile(FileStream fileStream)
         {
-            var o1 = JObject.Parse(json);
-
-            var jAsset = o1["asset"];
-            var jScenes = o1["scenes"];
-            var jNodes = o1["nodes"];
-            var jMeshes = o1["meshes"];
-            var jBufferViews = o1["bufferViews"];
-            var jBuffers = o1["buffers"];
-            var jImages = o1["images"];
-            var jDummy = o1["dummy"];
-            var jTextures = o1["textures"];
-            var jMaterials = o1["materials"];
-            var jSamplers = o1["samplers"];
-            var jAccessors = o1["accessors"];
-
-            if (jBuffers == null || jBufferViews == null || jAsset == null)
+            using (var reader = new StreamReader(fileStream))
             {
-                throw new Exception();
+                return reader.ReadToEnd();
             }
-            
+        }
+
+        private static byte[] ExtractBinaryFromGLB(byte[] glbBytes, int jsonLength)
+        {
+            if (glbBytes.Length < jsonLength + 28)
+            {
+                throw new Exception("Invalid GLB file format.");
+            }
+
+            var chunkLength1 = BitConverter.ToUInt32(glbBytes, 20 + jsonLength);
+            var startIndex = 20 + jsonLength + 8;
+            if (glbBytes.Length < startIndex + chunkLength1)
+            {
+                throw new Exception("Invalid GLB file format.");
+            }
+
+            var binChunkData = new byte[chunkLength1];
+            Array.Copy(glbBytes, startIndex, binChunkData, 0, (int)chunkLength1);
+            return binChunkData;
+        }
+
+        private static GLTFFile LoadFromJsonWithBinary(string path, string json, byte[]? binary)
+        {
+            var jObject = JObject.Parse(json);
+
+            // Überprüfe die erforderlichen Elemente
+            if (jObject["asset"] == null || jObject["buffers"] == null || jObject["bufferViews"] == null || jObject["accessors"] == null)
+            {
+                throw new ArgumentException("Die GLTF-Datei enthält nicht alle erforderlichen Elemente.");
+            }
+
+            var asset = LoadAsset(jObject["asset"]);
+            var buffers = LoadBuffers(path, jObject["buffers"]);
+            var bufferViews = LoadBufferViews(jObject["bufferViews"], buffers);
+            var accessors = LoadAccessors(jObject["accessors"], bufferViews);
+            var samplers = LoadSamplers(jObject["samplers"]);
+            var images = LoadImages(path, jObject["images"], bufferViews);
+            var textures = LoadTextures(jObject["textures"], samplers, images);
+            var materials = LoadMaterials(jObject["materials"], textures);
+            var meshes = LoadMeshes(jObject["meshes"], accessors, materials);
+            var nodes = LoadNodes(jObject["nodes"], meshes);
+            var animations = jObject["animations"] != null ? LoadAnimations(jObject["animations"], accessors, nodes) : null;
+            var skins = jObject["skins"] != null ? LoadSkins(jObject["skins"], accessors, nodes) : null;
+
+            return new GLTFFile()
+            {
+                Path = path,
+                Asset = asset,
+                Buffers = buffers,
+                BufferViews = bufferViews,
+                Accessors = accessors,
+                Images = images,
+                Samplers = samplers,
+                Textures = textures,
+                Materials = materials,
+                Meshes = meshes,
+                Nodes = nodes,
+                //Animations = animations,
+                //Skins = skins,
+            };
+        }
+
+        private static Asset LoadAsset(JToken jAsset)
+        {
+            var versionToken = jAsset["version"];
+            if (versionToken == null)
+            {
+                throw new Exception("Version field is missing.");
+            }
+
             var asset = new Asset
             {
-                Version = (string)jAsset["version"]
+                Version = versionToken.ToString(),
+                Copyright = (string?)jAsset["copyright"],
+                Generator = (string?)jAsset["generator"],
+                MinVersion = (string?)jAsset["minVersion"]
             };
 
+            return asset;
+        }
+
+        public static Buffer[] LoadBuffers(string path, JToken jBuffers, byte[] array = null)
+        {
             var buffers = new Buffer[jBuffers.Count()];
             for (var i = 0; i < jBuffers.Count(); i++)
             {
                 var jToken = jBuffers[i];
+
                 var buffer = new Buffer
                 {
-                    Uri = (string)(jToken?["uri"] ?? string.Empty),
+                    Uri = (string?)jToken?["uri"],
                     ByteLength = (int)jToken?["byteLength"]
                 };
-                
-                if (i == 0)
-                {
-                    if (buffer.Uri != string.Empty)
-                    {
-                        throw new Exception("uri of first buffer must be undefined");
-                    }
-                    buffer.Bytes = array;
-                    buffers[i] = buffer;
-                    continue;
-                }
-                
-                if (buffer.Uri == null)
-                {
-                    throw new Exception();
-                }
 
-                if (Path.IsPathRooted(buffer.Uri))
+                if (string.IsNullOrEmpty(buffer.Uri))
                 {
-                    if (!File.Exists(buffer.Uri))
-                    {
-                        throw new FileNotFoundException();
-                    }
-                
-                    buffer.Bytes = File.ReadAllBytes(buffer.Uri);
+                    buffer.Bytes = array;
                 }
                 else
                 {
-                    var combinedPath = Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, buffer.Uri);
-                    if (!File.Exists(combinedPath))
+                    if (buffer.Uri.StartsWith("data:"))
                     {
-                        throw new FileNotFoundException();
+                        buffer.Bytes = LoadBase64Buffer(buffer.Uri);
                     }
-                
-                    buffer.Bytes = File.ReadAllBytes(combinedPath);
+                    else
+                    {
+                        buffer.Bytes = LoadBufferBytes(path, buffer.Uri);
+                    }
                 }
-                
                 buffers[i] = buffer;
             }
-            
+            return buffers;
+        }
+
+        private static byte[] LoadBufferBytes(string path, string uri)
+        {
+            var combinedPath = Path.IsPathRooted(uri) ? uri : Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, uri);
+            if (!File.Exists(combinedPath))
+            {
+                throw new FileNotFoundException();
+            }
+            return File.ReadAllBytes(combinedPath);
+        }
+
+        private static byte[] LoadBase64Buffer(string base64Uri)
+        {
+            var base64Data = base64Uri.Substring(base64Uri.IndexOf(",") + 1);
+            return Convert.FromBase64String(base64Data);
+        }
+
+        private static BufferView[] LoadBufferViews(JToken jBufferViews, Buffer[] buffers)
+        {
             var bufferViews = new BufferView[jBufferViews.Count()];
             for (var i = 0; i < jBufferViews.Count(); i++)
             {
                 var jToken = jBufferViews[i];
-                
-                var bufferView = new BufferView
+                bufferViews[i] = new BufferView
                 {
-                    Buffer = buffers[(int)jToken?["buffer"]],
-                    ByteLength = (int)jToken?["byteLength"],
-                    ByteOffset = (int)jToken?["byteOffset"],
-                    ByteStride = (int)(jToken?["byteStride"] ?? 0)
+                    Buffer = buffers[(int)jToken["buffer"]],
+                    ByteLength = (int)jToken["byteLength"],
+                    ByteOffset = (int)jToken["byteOffset"],
+                    ByteStride = (int)(jToken["byteStride"] ?? 0)
                 };
-                bufferViews[i] = bufferView;
             }
-            
+            return bufferViews;
+        }
+
+        private static Accessor[] LoadAccessors(JToken jAccessors, BufferView[] bufferViews)
+        {
             var accessors = new Accessor[jAccessors.Count()];
             for (var i = 0; i < jAccessors.Count(); i++)
             {
                 var jToken = jAccessors[i];
-                
-                var accessor = new Accessor
+                accessors[i] = new Accessor
                 {
-                    BufferView = bufferViews[(int)jToken?["bufferView"]],
-                    ByteOffset = (int)(jToken?["byteOffset"] ?? 0),
-                    Count = (int)jToken?["count"],
-                    ComponentType = ComponentType.FromInt((int)jToken?["componentType"]),
-                    Type = Type.FromSting((string)jToken?["type"])
+                    BufferView = bufferViews[(int)jToken["bufferView"]],
+                    ByteOffset = (int)(jToken["byteOffset"] ?? 0),
+                    Count = (int)jToken["count"],
+                    ComponentType = ComponentType.FromInt((int)jToken["componentType"]),
+                    Type = Type.FromSting((string)jToken["type"])
                 };
-                accessors[i] = accessor;
             }
-            
-            var samplers = new Sampler[jSamplers.Count()];
+            return accessors;
+        }
+
+        private static TextureSampler[] LoadSamplers(JToken jSamplers)
+        {
+            if (jSamplers == null) return null;
+
+            var samplers = new TextureSampler[jSamplers.Count()];
             for (var i = 0; i < jSamplers.Count(); i++)
             {
-                var jToken = jSamplers[i];
-                
-                if (!jToken.HasValues)
+                var jSampler = jSamplers[i];
+
+                if (!jSampler.HasValues)
                 {
                     continue;
                 }
-                
-                var sampler = new Sampler()
+
+                int wrapS = jSampler?["wrapS"] != null ? (int)jSampler["wrapS"] : 10497;
+                int wrapT = jSampler?["wrapT"] != null ? (int)jSampler["wrapT"] : 10497;
+                int? minFilter = jSampler?["minFilter"] != null ? (int?)jSampler["minFilter"] : null;
+                int? magFilter = jSampler?["magFilter"] != null ? (int?)jSampler["magFilter"] : null;
+
+                var sampler = new TextureSampler()
                 {
-                    WrapS = (int)jToken?["wrapS"],
-                    WrapT = (int)jToken?["wrapT"],
-                    MinFilter = (int)jToken?["minFilter"],
-                    MagFilter = (int)jToken?["magFilter"]
+                    WrapS = wrapS,
+                    WrapT = wrapT,
+                    MinFilter = minFilter,
+                    MagFilter = magFilter
                 };
-                
+
                 samplers[i] = sampler;
             }
-            
+            return samplers;
+        }
+
+        private static Image[] LoadImages(string path, JToken jImages, BufferView[] bufferViews)
+        {
             var images = new Image[jImages.Count()];
             for (var i = 0; i < jImages.Count(); i++)
             {
-                var jObject = jImages[i];
-                
+                var jImage = jImages[i];
+
                 var image = new Image
                 {
-                    Uri = (string)jObject?["uri"]
+                    Uri = (string?)jImage?["uri"]
                 };
 
                 if (image.Uri == null)
                 {
-                    throw new Exception();
-                }
+                    var bufferViewIndex = (int)jImage?["bufferView"];
+                    var bufferView = bufferViews[bufferViewIndex];
+                    var mimeType = MiMeType.FromString((string)jImage["mimeType"]);
 
-                if (Path.IsPathRooted(image.Uri))
-                {
-                    if (!File.Exists(image.Uri))
-                    {
-                        throw new FileNotFoundException("images specified in gltf file could not be found");
-                    }
+                    image.BufferView = bufferView;
+                    image.MiMeType = mimeType;
                 }
                 else
                 {
-                    var combinedPath = Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, image.Uri);
-                    if (!File.Exists(combinedPath))
+                    if (Path.IsPathRooted(image.Uri))
                     {
-                        throw new FileNotFoundException("images specified in gltf file could not be found");
+                        if (!File.Exists(image.Uri))
+                        {
+                            throw new FileNotFoundException("images specified in gltf file could not be found");
+                        }
+                    }
+                    else
+                    {
+                        var combinedPath = Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, image.Uri);
+                        if (!File.Exists(combinedPath))
+                        {
+                            throw new FileNotFoundException("images specified in gltf file could not be found");
+                        }
                     }
                 }
-                
+
                 images[i] = image;
             }
-            
+            return images;
+        }
+
+        private static Texture[] LoadTextures(JToken jTextures, TextureSampler[] samplers, Image[] images)
+        {
             var textures = new Texture[jTextures.Count()];
             for (var i = 0; i < jTextures.Count(); i++)
             {
-                var jObject = jTextures[i];
-                
-                var texture = new Texture()
+                var jToken = jTextures[i];
+                textures[i] = new Texture
                 {
-                    Sampler = samplers[(int)jObject?["sampler"]] ?? null,
-                    Source = images[(int)jObject?["source"]]
+                    Sampler = jToken["sampler"] != null ? samplers[(int)jToken["sampler"]] : null,
+                    Source = images[(int)jToken["source"]]
                 };
-                textures[i] = texture;
             }
-            
+            return textures;
+        }
+
+        private static Material[] LoadMaterials(JToken jMaterials, Texture[] textures)
+        {
             var materials = new Material[jMaterials.Count()];
             for (var i = 0; i < jMaterials.Count(); i++)
             {
-                var jObject = (JObject)jMaterials[i];
-                
-                var material = new Material()
+                var jToken = (JObject)jMaterials[i];
+                var material = new Material
                 {
-                    Name = (string)(jObject?["name"] ?? string.Empty),
-                    AlphaMode = (string)(jObject?["alphaMode"] ?? string.Empty),
-                    DoubleSided = (bool)(jObject?["doubleSided"] ?? false),
-                    //MetallicFactor = (int)(jObject?["metallicFactor"] ?? 0)
+                    Name = (string)(jToken["name"] ?? string.Empty),
+                    AlphaMode = (string)(jToken["alphaMode"] ?? string.Empty),
+                    DoubleSided = (bool)(jToken["doubleSided"] ?? false)
                 };
 
-                if (jObject.ContainsKey("pbrMetallicRoughness"))
+                if (jToken.ContainsKey("pbrMetallicRoughness"))
                 {
-                    var pbr = (JObject)jObject["pbrMetallicRoughness"];
+                    var pbr = (JObject)jToken["pbrMetallicRoughness"];
                     if (pbr.ContainsKey("baseColorTexture"))
                     {
                         var baseColorTexture = (JObject)pbr["baseColorTexture"];
-                        material.BaseColorTexture = textures[(int)baseColorTexture["index"]];
+                        //material.PbrMetallicRoughness.BaseColorTexture = textures[(int)baseColorTexture["index"]];
                     }
-                }
-                
-                for (var j = 0; j < jObject.Count; j++)
-                {
-                    
                 }
 
                 materials[i] = material;
             }
-            
-            var meshes = new Mesh[jMeshes.Count()];
-            for (var i = 0; i < jMeshes.Count(); i++)
-            {
-                var jMeshToken = jMeshes[i];
-                var jMeshPrimitiveToken = jMeshToken?["primitives"];
-                
-                var primitives = new Primitive[jMeshPrimitiveToken.Count()];
-                for (var j = 0; j < jMeshPrimitiveToken.Count(); j++)
-                {
-
-                    var jPrimitiveObject = (JObject)jMeshPrimitiveToken?[j];
-                    var jMeshPrimitiveAttribute = (JObject)jPrimitiveObject["attributes"];
-                    var attributes = new Attribute[jMeshPrimitiveAttribute.Count];
-
-                    var x = 0;
-                    foreach (var attributeData in jMeshPrimitiveAttribute)
-                    {
-                        var attribute = new Attribute()
-                        {
-                            Type = attributeData.Key,
-                            Accessor = accessors[(int)attributeData.Value]
-                        };
-                        attributes[x] = attribute;
-                        x++;
-                    }
-                    var primitive = new Primitive()
-                    { 
-                        Attributes = attributes,
-                        Indices = (jPrimitiveObject["indices"] ?? null) != null ? accessors[(int)jPrimitiveObject["indices"]] : null,
-                        Material = (jPrimitiveObject["material"] ?? null) != null ? materials[(int)jPrimitiveObject["material"]] : null
-                    };
-                    
-                    primitives[j] = primitive;
-                    //Console.WriteLine((string)jMeshPrimitiveToken);
-                }
-                
-                var mesh = new Mesh()
-                {
-                    Name = (string)(jMeshToken?["name"] ?? string.Empty),
-                    Primitives = primitives
-                };
-                
-                meshes[i] = mesh;
-            }
-
-            return new GLTFFile()
-            {
-                FilePath = path,
-                Asset = asset,
-                Buffers = buffers,
-                BufferViews = bufferViews,
-                Accessors = accessors,
-                Images = images,
-                Samplers = samplers,
-                Textures = textures,
-                Materials = materials,
-                Meshes = meshes
-            };
+            return materials;
         }
 
-        // ReSharper disable once InconsistentNaming
-        private static GLTFFile LoadFromGLTFFile(string path)
+        private static Mesh[] LoadMeshes(JToken jMeshes, Accessor[] accessors, Material[] materials)
         {
-            var o1 = JObject.Parse(File.ReadAllText(path));
+            var meshes = new Mesh[jMeshes.Count()];
 
-            var jAsset = o1["asset"];
-            var jScenes = o1["scenes"];
-            var jNodes = o1["nodes"];
-            var jMeshes = o1["meshes"];
-            var jBufferViews = o1["bufferViews"];
-            var jBuffers = o1["buffers"];
-            var jImages = o1["images"];
-            var jDummy = o1["dummy"];
-            var jTextures = o1["textures"];
-            var jMaterials = o1["materials"];
-            var jSamplers = o1["samplers"];
-            var jAccessors = o1["accessors"];
-
-            if (jBuffers == null || jBufferViews == null || jAsset == null)
+            for (var a = 0; a < jMeshes.Count(); a++)
             {
-                throw new Exception();
-            }
-            
-            var asset = new Asset
-            {
-                Version = (string)jAsset["version"]
-            };
-
-            var buffers = new Buffer[jBuffers.Count()];
-            for (var i = 0; i < jBuffers.Count(); i++)
-            {
-                var jToken = jBuffers[i];
-                
-                var buffer = new Buffer
+                var jMesh = jMeshes[a];
+                if (jMesh == null)
                 {
-                    Uri = (string)jToken?["uri"],
-                    ByteLength = (int)jToken?["byteLength"]
-                };
+                    throw new Exception($"Mesh at index {a} is null.");
+                }
+                var mesh = new Mesh();
 
-                if (buffer.Uri == null)
+                // Name
+                var jMeshName = jMesh["name"];
+                if (jMeshName != null && jMeshName.Type == JTokenType.String)
+                {
+                    mesh.Name = jMeshName.ToString();
+                }
+
+                var jMeshPrimitives = jMesh["primitives"];
+                if (jMeshPrimitives == null)
+                {
+                    throw new Exception($"No primitives found for mesh at index {a}.");
+                }
+
+                var meshPrimitives = new MeshPrimitive[jMeshPrimitives.Count()];
+                for (int b = 0; b < meshPrimitives.Length; b++)
+                {
+                    var jMeshPrimitive = jMeshPrimitives[b];
+                    if (jMeshPrimitive == null)
+                    {
+                        throw new Exception($"Primitive at index {b} is null.");
+                    }
+
+                    var meshPrimitive = new MeshPrimitive();
+
+                    // Indices
+                    var jIndices = jMeshPrimitive["indices"];
+                    if (jIndices != null)
+                    {
+                        var indicesIndex = jIndices.Value<int>();
+                        meshPrimitive.Indices = accessors[indicesIndex];
+                    }
+                    
+                    // Material
+                    var jMaterial = jMeshPrimitive["material"];
+                    if (jMaterial != null)
+                    {
+                        var materialIndex = jMaterial.Value<int>();
+                        meshPrimitive.Material = materials[materialIndex];
+                    }
+
+                    // Mode
+                    var jMode = jMeshPrimitive["mode"];
+                    if (jMode != null)
+                    {
+                        var mode = jMode.Value<int>();
+                        meshPrimitive.Mode = mode;
+                    }
+
+                    // Attributes
+                    var jAttributes = jMeshPrimitive["attributes"];
+                    if (jAttributes == null)
+                    {
+                        throw new Exception("Attributes not found for mesh primitive.");
+                    }
+                    var attributes = new Dictionary<string, Accessor>();
+                    foreach (JProperty jAttribute in jAttributes)
+                    {
+                        int attributeValue = jAttribute.Value.Value<int>();
+                        var attributeName = jAttribute.Name;
+
+                        attributes.Add(attributeName, accessors[attributeValue]);
+                    }
+                    meshPrimitive.Attributes = attributes;
+
+                    meshPrimitives[b] = meshPrimitive;
+                }
+
+                mesh.Primitives = meshPrimitives;
+                meshes[a] = mesh;
+            }
+            return meshes;
+        }
+
+        private static Animation[] LoadAnimations(JToken jAnimations, Accessor[] accessors, Node[] nodes)
+        {
+            var animations = new Animation[jAnimations.Count()];
+
+            for (var a = 0; a < jAnimations.Count(); a++)
+            {
+                var jAnimation = jAnimations[a];
+                if (jAnimation == null)
+                {
+                    throw new Exception($"Animation at index {a} is null.");
+                }
+
+                var animation = new Animation();
+
+                var jAnimationName = jAnimation["name"];
+                if (jAnimationName != null && jAnimationName.Type == JTokenType.String)
+                {
+                    animation.Name = jAnimationName.ToString();
+                }
+
+                var jAnimationSamplers = jAnimation["samplers"];
+                if (jAnimationSamplers == null)
+                {
+                    throw new Exception("No samplers found for animation.");
+                }
+
+                var animationSamplers = new AnimationSampler[jAnimationSamplers.Count()];
+                for (int b = 0; b < animationSamplers.Length; b++)
+                {
+                    var jAnimationSampler = jAnimationSamplers[b];
+                    if (jAnimationSampler == null)
+                    {
+                        throw new Exception($"Sampler at index {b} is null.");
+                    }
+
+                    var animationSampler = new AnimationSampler();
+
+                    // Input accessor
+                    var jAnimationSamplerInput = jAnimationSampler["input"];
+                    if (jAnimationSamplerInput == null)
+                    {
+                        throw new Exception("Input accessor not found for sampler.");
+                    }
+                    var inputIndex = jAnimationSamplerInput.Value<int>();
+                    animationSampler.Input = accessors[inputIndex];
+
+                    // Output accessor
+                    var jAnimationSamplerOutput = jAnimationSampler["output"];
+                    if (jAnimationSamplerOutput == null)
+                    {
+                        throw new Exception("Output accessor not found for sampler.");
+                    }
+                    var outputIndex = jAnimationSamplerOutput.Value<int>();
+                    animationSampler.Output = accessors[outputIndex];
+
+                    // Interpolation
+                    var jAnimationSamplerInterpolation = jAnimationSampler["interpolation"];
+                    if (jAnimationSamplerInterpolation != null)
+                    {
+                        var identifier = jAnimationSamplerInterpolation.ToString();
+                        if (identifier == "STEP")
+                        {
+                            animationSampler.Interpolation = InterpolationAlgorithm.Step;
+                        }
+                        else if (identifier == "CUBICSPLINE")
+                        {
+                            animationSampler.Interpolation = InterpolationAlgorithm.Cubicspline;
+                        }
+                    }
+
+                    animationSamplers[b] = animationSampler;
+                }
+
+                // Channels
+                var jAnimationChannels = jAnimation["channels"];
+                if (jAnimationChannels == null)
+                {
+                    throw new Exception("No channels found for animation.");
+                }
+
+                var animationChannels = new AnimationChannel[jAnimationChannels.Count()];
+                for (int c = 0; c < animationChannels.Length; c++)
+                {
+                    var jAnimationChannel = jAnimationChannels[c];
+                    if (jAnimationChannel == null)
+                    {
+                        throw new Exception($"Channel at index {c} is null.");
+                    }
+
+                    var animationChannel = new AnimationChannel();
+
+                    // Sampler
+                    var jAnimationChannelSampler = jAnimationChannel["sampler"];
+                    if (jAnimationChannelSampler == null)
+                    {
+                        throw new Exception("Sampler not found for channel.");
+                    }
+                    var samplerIndex = jAnimationChannelSampler.Value<int>();
+                    animationChannel.Sampler = animationSamplers[samplerIndex];
+
+                    // Target
+                    var jAnimationChannelTarget = jAnimationChannel["target"];
+                    if (jAnimationChannelTarget == null)
+                    {
+                        throw new Exception("Target not found for channel.");
+                    }
+                    var animationChannelTarget = new AnimationChannelTarget();
+
+                    var jAnimationChannelTargetNode = jAnimationChannelTarget["node"];
+                    if (jAnimationChannelTargetNode == null)
+                    {
+                        throw new Exception("Node not found for channel target.");
+                    }
+                    var nodeIndex = jAnimationChannelTargetNode.Value<int>();
+                    // Assuming nodes have been loaded previously and stored in a variable called 'nodes'
+                    animationChannelTarget.Node = nodes[nodeIndex];
+
+                    var jAnimationChannelTargetPath = jAnimationChannelTarget["path"];
+                    if (jAnimationChannelTargetPath == null)
+                    {
+                        throw new Exception("Path not found for channel target.");
+                    }
+                    animationChannelTarget.Path = jAnimationChannelTargetPath.ToString();
+
+                    animationChannel.Target = animationChannelTarget;
+
+                    animationChannels[c] = animationChannel;
+                }
+
+                animation.Samplers = animationSamplers;
+                animation.Channels = animationChannels;
+
+                animations[a] = animation;
+            }
+
+            return animations;
+        }
+
+        private static Node[] LoadNodes(JToken jNodes, Mesh[] meshes)
+        {
+            var nodes = new Node[jNodes.Count()];
+
+            for (var a = 0; a < nodes.Length; a++)
+            {
+                var jNode = jNodes[a];
+                if (jNode == null)
                 {
                     throw new Exception();
                 }
 
-                if (Path.IsPathRooted(buffer.Uri))
-                {
-                    if (!File.Exists(buffer.Uri))
-                    {
-                        throw new FileNotFoundException();
-                    }
-                
-                    buffer.Bytes = File.ReadAllBytes(buffer.Uri);
-                }
-                else
-                {
-                    var combinedPath = Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, buffer.Uri);
-                    if (!File.Exists(combinedPath))
-                    {
-                        throw new FileNotFoundException();
-                    }
-                
-                    buffer.Bytes = File.ReadAllBytes(combinedPath);
-                }
-                
-                buffers[i] = buffer;
-            }
-            
-            var bufferViews = new BufferView[jBufferViews.Count()];
-            for (var i = 0; i < jBufferViews.Count(); i++)
-            {
-                var jObject = jBufferViews[i];
-                
-                var bufferView = new BufferView
-                {
-                    Buffer = buffers[(int)jObject?["buffer"]],
-                    ByteLength = (int)jObject?["byteLength"],
-                    ByteOffset = (int)jObject?["byteOffset"],
-                    ByteStride = (int)(jObject?["byteStride"] ?? 0)
-                };
-                bufferViews[i] = bufferView;
-            }
-            
-            var accessors = new Accessor[jAccessors.Count()];
-            for (var i = 0; i < jAccessors.Count(); i++)
-            {
-                var jObject = jAccessors[i];
-                
-                var accessor = new Accessor
-                {
-                    BufferView = bufferViews[(int)jObject?["bufferView"]],
-                    ByteOffset = (int)(jObject?["byteOffset"] ?? 0),
-                    Count = (int)jObject?["count"],
-                    ComponentType = ComponentType.FromInt((int)jObject?["componentType"]),
-                    Type = Type.FromSting((string)jObject?["type"])
-                };
-                accessors[i] = accessor;
-            }
-            
-            var samplers = new Sampler[jSamplers.Count()];
-            Console.WriteLine(jSamplers.Count());
-            for (var i = 0; i < jSamplers.Count(); i++)
-            {
-                var jObject = jSamplers[i];
+                var node = new Node();
 
-                if (!jObject.HasValues)
+                var jNodeName = jNode["name"];
+                if (jNodeName != null && jNodeName.Type == JTokenType.String)
                 {
-                    continue;
+                    node.Name = jNodeName.ToString();
                 }
-                
-                var sampler = new Sampler()
-                {
-                    WrapS = (int)jObject?["wrapS"],
-                    WrapT = (int)jObject?["wrapT"],
-                    MinFilter = (int)jObject?["minFilter"],
-                    MagFilter = (int)jObject?["magFilter"]
-                };
-                
-                samplers[i] = sampler;
-            }
-            
-            var images = new Image[jImages.Count()];
-            for (var i = 0; i < jImages.Count(); i++)
-            {
-                var jObject = jImages[i];
-                
-                var image = new Image
-                {
-                    Uri = (string)jObject?["uri"]
-                };
 
-                if (image.Uri == null)
+                var jNodeMesh = jNode["mesh"];
+                if (jNodeMesh != null)
+                {
+                    node.Mesh = meshes[jNodeMesh.Value<int>()];
+                }
+
+                var jNodeMatrix = jNode["matrix"];
+                if (jNodeMatrix != null)
+                {
+                    var matrixValues = jNodeMatrix.ToObject<float[]>();
+                    if (matrixValues == null)
+                    {
+                        throw new Exception();
+                    }
+
+                    if (matrixValues.Length != 16)
+                    {
+                        throw new Exception();
+                    }
+
+                    node.Matrix = new Matrix(
+                        matrixValues[0], matrixValues[1], matrixValues[2], matrixValues[3],
+                        matrixValues[4], matrixValues[5], matrixValues[6], matrixValues[7],
+                        matrixValues[8], matrixValues[9], matrixValues[10], matrixValues[11],
+                        matrixValues[12], matrixValues[13], matrixValues[14], matrixValues[15]);
+                }
+
+                var jNodeScale = jNode["scale"];
+                if (jNodeScale != null)
+                {
+                    var scaleValues = jNodeScale.ToObject<float[]>();
+                    if (scaleValues == null)
+                    {
+                        throw new Exception("Scale values for node are null.");
+                    }
+
+                    if (scaleValues.Length != 3)
+                    {
+                        throw new Exception("Scale values for node have invalid length.");
+                    }
+
+                    node.Scale = new Vector3(scaleValues[0], scaleValues[1], scaleValues[2]);
+                }
+
+                var jNodeRotation = jNode["rotation"];
+                if (jNodeRotation != null)
+                {
+                    var rotationValues = jNodeRotation.ToObject<float[]>();
+                    if (rotationValues == null)
+                    {
+                        throw new Exception("Rotation values for node are null.");
+                    }
+
+                    if (rotationValues.Length != 4)
+                    {
+                        throw new Exception("Rotation values for node have invalid length.");
+                    }
+
+                    node.Rotation = new Quaternion(rotationValues[0], rotationValues[1], rotationValues[2], rotationValues[3]);
+                }
+
+                var jNodeTranslation = jNode["translation"];
+                if (jNodeTranslation != null)
+                {
+                    var translationValues = jNodeTranslation.ToObject<float[]>();
+                    if (translationValues == null)
+                    {
+                        throw new Exception("Translation values for node are null.");
+                    }
+
+                    if (translationValues.Length != 3)
+                    {
+                        throw new Exception("Translation values for node have invalid length.");
+                    }
+
+                    node.Translation = new Vector3(translationValues[0], translationValues[1], translationValues[2]);
+                }
+                nodes[a] = node;
+            }
+
+            for (var a = 0; a < nodes.Length; a++)
+            {
+                var jNode = jNodes[a];
+                if (jNode == null)
+                {
+                    throw new Exception("Node at index " + a + " is null.");
+                }
+
+                var jNodeChildren = jNode["children"];
+                if (jNodeChildren != null && jNodeChildren.Type == JTokenType.Array)
+                {
+                    var childIndices = jNodeChildren.ToObject<int[]>();
+                    if (childIndices != null)
+                    {
+                        var childNodes = new Node[childIndices.Length];
+                        for (int i = 0; i < childIndices.Length; i++)
+                        {
+                            var childIndex = childIndices[i];
+                            if (childIndex >= 0 && childIndex < nodes.Length)
+                            {
+                                childNodes[i] = nodes[childIndex];
+                            }
+                            else
+                            {
+                                throw new Exception("Invalid child index for node at index " + a + ".");
+                            }
+                        }
+                        nodes[a].Children = childNodes;
+                    }
+                }
+            }
+
+            return nodes;
+        }
+
+        private static Skin[] LoadSkins(JToken jSkins, Accessor[] accessors, Node[] nodes)
+        {
+            var skins = new Skin[jSkins.Count()];
+
+            for (var a = 0; a < skins.Length; a++)
+            {
+                var jSkin = jSkins[a];
+                if (jSkin == null)
                 {
                     throw new Exception();
                 }
 
-                if (Path.IsPathRooted(image.Uri))
+                var skin = new Skin();
+
+                var jSkinName = jSkin["name"];
+                if (jSkinName != null)
                 {
-                    if (!File.Exists(image.Uri))
-                    {
-                        throw new FileNotFoundException("images specified in gltf file could not be found");
-                    }
+                    skin.Name = jSkinName.ToString();
                 }
-                else
+
+                var jSkinJoints = jSkin["joints"];
+                if (jSkinJoints == null)
                 {
-                    var combinedPath = Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, image.Uri);
-                    if (!File.Exists(combinedPath))
-                    {
-                        throw new FileNotFoundException("images specified in gltf file could not be found");
-                    }
+                    throw new Exception();
                 }
-                
-                images[i] = image;
+
+                var skinJointsIndices = jSkinJoints.ToObject<int[]>();
+                if (skinJointsIndices == null)
+                {
+                    throw new Exception();
+                }
+
+                var skinJoints = new Node[jSkinJoints.Count()];
+                for (int b = 0; b < skinJointsIndices.Length; b++)
+                {
+                    skinJoints[b] = nodes[skinJointsIndices[b]];
+                }
+
+                var jSkinInverseBindMatrices = jSkin["inverseBindMatrices"];
+                if (jSkinInverseBindMatrices != null)
+                {
+                    var inverseBindMatricesIndex = jSkinInverseBindMatrices.Value<int>();
+                    skin.InverseBindMatrices = accessors[inverseBindMatricesIndex];
+                }
+
+                var jSkinSkeleton = jSkin["skeleton"];
+                if (jSkinSkeleton != null)
+                {
+                    skin.Skeleton = nodes[jSkinSkeleton.Value<int>()];
+                }
+
+                skin.Joints = skinJoints;
+
+                skins[a] = skin;
             }
-            
-            var textures = new Texture[jTextures.Count()];
-            for (var i = 0; i < jTextures.Count(); i++)
-            {
-                var jObject = jTextures[i];
-                
-                var texture = new Texture()
-                {
-                    Sampler = samplers[(int)jObject?["sampler"]] ?? null,
-                    Source = images[(int)jObject?["source"]]
-                };
-                textures[i] = texture;
-            }
-            
-            var materials = new Material[jMaterials.Count()];
-            for (var i = 0; i < jMaterials.Count(); i++)
-            {
-                var jObject = (JObject)jMaterials[i];
-                
-                var material = new Material()
-                {
-                    Name = (string)(jObject?["name"] ?? string.Empty),
-                    AlphaMode = (string)(jObject?["alphaMode"] ?? string.Empty),
-                    DoubleSided = (bool)(jObject?["doubleSided"] ?? false),
-                    //MetallicFactor = (int)(jObject?["metallicFactor"] ?? 0)
-                };
-
-                if (jObject.ContainsKey("pbrMetallicRoughness"))
-                {
-                    var pbr = (JObject)jObject["pbrMetallicRoughness"];
-                    if (pbr.ContainsKey("baseColorTexture"))
-                    {
-                        var baseColorTexture = (JObject)pbr["baseColorTexture"];
-                        material.BaseColorTexture = textures[(int)baseColorTexture["index"]];
-                    }
-                }
-                
-                for (var j = 0; j < jObject.Count; j++)
-                {
-                    
-                }
-
-                materials[i] = material;
-            }
-            
-            var meshes = new Mesh[jMeshes.Count()];
-            for (var i = 0; i < jMeshes.Count(); i++)
-            {
-                var jMeshToken = jMeshes[i];
-                var jMeshPrimitiveToken = jMeshToken?["primitives"];
-                
-                var primitives = new Primitive[jMeshPrimitiveToken.Count()];
-                for (var j = 0; j < jMeshPrimitiveToken.Count(); j++)
-                {
-
-                    var jPrimitiveObject = (JObject)jMeshPrimitiveToken?[j];
-                    var jMeshPrimitiveAttribute = (JObject)jPrimitiveObject["attributes"];
-                    var attributes = new Attribute[jMeshPrimitiveAttribute.Count];
-
-                    var x = 0;
-                    foreach (var attributeData in jMeshPrimitiveAttribute)
-                    {
-                        var attribute = new Attribute()
-                        {
-                            Type = attributeData.Key,
-                            Accessor = accessors[(int)attributeData.Value]
-                        };
-                        attributes[x] = attribute;
-                        x++;
-                    }
-                    var primitive = new Primitive()
-                    { 
-                        Attributes = attributes,
-                        Indices = (jPrimitiveObject["indices"] ?? null) != null ? accessors[(int)jPrimitiveObject["indices"]] : null,
-                        Material = (jPrimitiveObject["material"] ?? null) != null ? materials[(int)jPrimitiveObject["material"]] : null
-                    };
-                    
-                    primitives[j] = primitive;
-                    //Console.WriteLine((string)jMeshPrimitiveToken);
-                }
-                
-                var mesh = new Mesh()
-                {
-                    Name = (string)(jMeshToken?["name"] ?? string.Empty),
-                    Primitives = primitives
-                };
-                
-                meshes[i] = mesh;
-            }
-
-            return new GLTFFile()
-            {
-                FilePath = path,
-                Asset = asset,
-                Buffers = buffers,
-                BufferViews = bufferViews,
-                Accessors = accessors,
-                Images = images,
-                Samplers = samplers,
-                Textures = textures,
-                Materials = materials,
-                Meshes = meshes
-            };
+            return skins;
         }
-        
-        public static float[] ReadAccessor(Accessor accessor)
-        {
-
-            var result = new List<float>();
-            
-            var elementCount = accessor.Count;
-            var numberOfComponents = accessor.Type.NumberOfComponents;
-            var bitsPerComponent = accessor.ComponentType.Bits;
-            var bytesPerComponent = bitsPerComponent / 8;
-            var byteStride = accessor.BufferView.ByteStride;
-            var totalAmountOfBytes = bytesPerComponent * numberOfComponents * elementCount;// * (byteStride != 0 ? byteStride : 1);
-            var totalByteOffset = accessor.ByteOffset + accessor.BufferView.ByteOffset;
-
-            var stream = new MemoryStream(accessor.BufferView.Buffer.Bytes);
-            stream.Position = totalByteOffset;
-            var data = new byte[totalAmountOfBytes];
-            stream.Read(data, 0, totalAmountOfBytes);
-
-            /*
-            Console.WriteLine("ComponentType: " + accessor.ComponentType.Id);
-            Console.WriteLine("ComponentTypeBits: " + bitsPerComponent);
-            Console.WriteLine("ComponentTypeByte: " + bytesPerComponent);
-            Console.WriteLine("Type: " + accessor.Type.Id);
-            Console.WriteLine("ComponentCount: " + numberOfComponents);
-            Console.WriteLine("ElementCount: " + elementCount);
-            Console.WriteLine("ByteStride: " + byteStride);
-            Console.WriteLine("TotalAmountOfBytes: " + totalAmountOfBytes);
-            Console.WriteLine("BufferViewByteAmount: " + accessor.BufferView.ByteLength);
-            */
-
-            var bytes = new List<byte>();
-            var value = 0.0f;
-            for (var i = 0; i < totalAmountOfBytes; i += numberOfComponents * bytesPerComponent)
-            {
-                for (var k = 0; k < numberOfComponents * bytesPerComponent; k += bytesPerComponent)
-                {
-                    //Console.Write("    ");
-                    bytes.Clear();
-                    for (var j = 0; j < bytesPerComponent; j++)
-                    {
-                        //Console.Write($"0x{data[i + j + k]:X2} ");
-                        bytes.Add(data[i + j + k]);
-                    }
-
-                    if (accessor.ComponentType.Equals(ComponentType.T5126))
-                    {
-                        value = BitConverter.ToSingle(bytes.ToArray(), 0);
-                    }
-                    else if (accessor.ComponentType.Equals(ComponentType.T5125))
-                    {
-                        value = BitConverter.ToUInt32(bytes.ToArray(), 0);
-                    }
-                    else if (accessor.ComponentType.Equals(ComponentType.T5123))
-                    {
-                        value = BitConverter.ToUInt16(bytes.ToArray(), 0);
-                    }
-                    else if (accessor.ComponentType.Equals(ComponentType.T5122))
-                    {
-                        value = BitConverter.ToInt16(bytes.ToArray(), 0);
-                    }
-                    else if (accessor.ComponentType.Equals(ComponentType.T5121))
-                    {
-                        try
-                        {
-                            value = Convert.ToSByte(bytes.ToArray()[0]);
-                        }
-                        catch (OverflowException)
-                        {
-                            value = Convert.ToByte(bytes.ToArray()[0]);
-                        }
-                    }
-                    else if (accessor.ComponentType.Equals(ComponentType.T5120))
-                    {
-                        value = Convert.ToByte(bytes.ToArray()[0]);
-                    }
-                    result.Add(value);
-                    //Console.Write($" = {value}");
-                    //Console.Write($"\n");
-                }
-                //i += byteStride;
-            }
-            return result.ToArray();
-        }
-        
     }
 }

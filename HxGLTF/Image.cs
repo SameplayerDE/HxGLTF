@@ -24,16 +24,24 @@ namespace HxGLTF
             PatternBytes = patternBytes;
         }
 
-        public static MiMeType FromSting(string type)
+        public static MiMeType FromString(string type)
         {
-            return Types.ContainsKey(type.ToUpper()) ? Types[type.ToUpper()] : null;
+            if (type == null)
+            {
+                throw new ArgumentNullException(nameof(type), "Type cannot be null");
+            }
+            if (Types.TryGetValue(type, out var mimeType))
+            {
+                return mimeType;
+            }
+            throw new ArgumentException($"Unsupported MIME type: {type}", nameof(type));
         }
     }
     
     public class Image
     {
-        public string Uri;
-        public BufferView BufferView;
-        public MiMeType MiMeType;
+        public string? Uri;
+        public BufferView? BufferView;
+        public MiMeType? MiMeType;
     }
 }

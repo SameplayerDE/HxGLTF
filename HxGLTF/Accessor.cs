@@ -5,12 +5,12 @@ namespace HxGLTF
 
     public class ComponentType
     {
-        public static ComponentType T5120 = new ComponentType(5120, 8);
-        public static ComponentType T5121 = new ComponentType(5121, 8);
-        public static ComponentType T5122 = new ComponentType(5122, 16);
-        public static ComponentType T5123 = new ComponentType(5123, 16);
-        public static ComponentType T5125 = new ComponentType(5125, 32);
-        public static ComponentType T5126 = new ComponentType(5126, 32);
+        public static ComponentType T5120 = new ComponentType(5120, 8);  //Byte
+        public static ComponentType T5121 = new ComponentType(5121, 8);  //UByte
+        public static ComponentType T5122 = new ComponentType(5122, 16); //Short
+        public static ComponentType T5123 = new ComponentType(5123, 16); //UShort
+        public static ComponentType T5125 = new ComponentType(5125, 32); //UInt
+        public static ComponentType T5126 = new ComponentType(5126, 32); //Float
         
         private static Dictionary<int, ComponentType> _types = new Dictionary<int, ComponentType>()
         {
@@ -107,8 +107,9 @@ namespace HxGLTF
     public class Accessor
     {
         public BufferView BufferView;
-        public int ByteOffset;
+        public int ByteOffset = 0;
         public ComponentType ComponentType;
+        public bool Normalized = false;
         public int Count;
         public Type Type;
 

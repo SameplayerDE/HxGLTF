@@ -1,19 +1,23 @@
-﻿namespace HxGLTF
+﻿using Newtonsoft.Json;
+
+namespace HxGLTF
 {
-    // ReSharper disable once InconsistentNaming
     public class GLTFFile
     {
 
-        public string FilePath;
-        
+        public string Path;
+
         public Asset Asset;
         public Buffer[] Buffers;
         public BufferView[] BufferViews;
         public Accessor[] Accessors;
-        public Sampler[] Samplers;
+        public TextureSampler[] Samplers;
         public Image[] Images;
+        public Node[] Nodes;
         public Texture[] Textures;
         public Material[] Materials;
         public Mesh[] Meshes;
+        public Animation[] Animations;
+        public Skin[] Skins;
     }
 }

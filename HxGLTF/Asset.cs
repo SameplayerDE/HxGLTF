@@ -1,7 +1,10 @@
 ﻿namespace HxGLTF
 {
-    public class Asset
+    public struct Asset
     {
-        public string Version;
+        public string Version; //req
+        public string? Copyright; //opt
+        public string? Generator; //opt
+        public string? MinVersion; //opt
     }
 }

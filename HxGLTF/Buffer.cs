@@ -1,13 +1,9 @@
-﻿using System;
-
-namespace HxGLTF
+﻿namespace HxGLTF
 {
     public class Buffer
     {
-
         public int ByteLength;
-        public string Uri;
-        public byte[] Bytes;
-
+        public string? Uri;
+        public byte[]? Bytes;
     }
 }
