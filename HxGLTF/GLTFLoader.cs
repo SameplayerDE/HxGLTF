@@ -1,21 +1,23 @@
-﻿using Microsoft.Xna.Framework;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Newtonsoft.Json.Linq;
-using System.Xml.Linq;
-using static System.Net.Mime.MediaTypeNames;
+using HxGLTF.Core.PrimitiveDataStructures;
+using HxGLTF.Core;
+using Buffer = HxGLTF.Core.Buffer;
 
 namespace HxGLTF
 {
     public class GLTFLoader
     {
-        public static GLTFFile Load(string path)
+        public static void LoadSmart(string pathOrBaseName)
         {
-            if (string.IsNullOrEmpty(path))
+            if (string.IsNullOrEmpty(pathOrBaseName))
             {
-                throw new ArgumentNullException(nameof(path), "File path cannot be null or empty.");
+                throw new ArgumentNullException(nameof(pathOrBaseName), "File path or base name cannot be null or empty.");
             }
-
-            ValidateFileExists(path);
-
+            string path = ValidateFileExists(pathOrBaseName);
             using (var fileStream = File.OpenRead(path))
             {
                 var extension = Path.GetExtension(path);
@@ -25,7 +27,7 @@ namespace HxGLTF
                 string? json = null;
                 byte[]? binary = null;
 
-                if (extension.Equals(".glb"))
+                if (extension.Equals(".glb", StringComparison.OrdinalIgnoreCase))
                 {
                     glbBytes = ExtractGLBBytes(fileStream);
                     json = ExtractJSONFromGLB(glbBytes);
@@ -36,21 +38,164 @@ namespace HxGLTF
                     json = ExtractJSONFromFile(fileStream);
                 }
 
+                LoadFromJsonWithBinarySmart(path, json, binary);
+            }
+        }
+
+        private static void LoadFromJsonWithBinarySmart(string path, string json, byte[]? buffer = null)
+        {
+            var jObject = JObject.Parse(json);
+
+            var jAsset = jObject["asset"];
+            if (jAsset == null)
+            {
+                throw new Exception();
+            }
+
+            var jScenes = jObject["scenes"];
+            if (jScenes == null)
+            {
+                return;
+            }
+
+            var sceneCount = jScenes.Count();
+            var scenes = new Scene[sceneCount];
+
+            for (int a = 0; a < sceneCount; a++)
+            {
+                var jScene = jScenes[a];
+                if (jScene == null)
+                {
+                    throw new Exception();
+                }
+                var scene = new Scene();
+
+                var jSceneName = jScene["name"];
+                if (jSceneName != null)
+                {
+                    var sceneName = jSceneName.ToString();
+                    scene.Name = sceneName;
+                }
+
+                var jSceneNodeIndices = jScene["nodes"];
+                if (jSceneNodeIndices != null)
+                {
+                    var sceneNodeIndices = jSceneNodeIndices.Value<int[]>();
+                    scene.NodesIndices = sceneNodeIndices;
+
+                    var jNodes = jObject["nodes"];
+                    if (jNodes == null)
+                    {
+                        throw new Exception();
+                    }
+
+                    foreach (var nodeIndex in scene.NodesIndices!)
+                    {
+                        var jNode = jNodes[nodeIndex];
+                        if (jNode == null)
+                        {
+                            throw new Exception();
+                        }
+                        var node = new Node();
+
+                        var jNodeName = jNode["name"];
+                        if (jNodeName != null && jNodeName.Type == JTokenType.String)
+                        {
+                            node.Name = jNodeName.ToString();
+                        }
+
+                        var jNodeSkin = jNode["skin"];
+                        if (jNodeSkin != null)
+                        {
+                            int skinIndex = jNodeSkin.Value<int>();
+                            node.SkinIndex = skinIndex;
+                        }
+
+                        var jNodeMesh = jNode["mesh"];
+                        if (jNodeMesh != null)
+                        {
+                            int meshIndex = jNodeMesh.Value<int>();
+                            node.MeshIndex = meshIndex;
+                        }
+                    }
+
+                }
+
+                scenes[a] = scene;
+            }
+
+
+        }
+
+        public static GLTFFile Load(string pathOrBaseName)
+        {
+            if (string.IsNullOrEmpty(pathOrBaseName))
+            {
+                throw new ArgumentNullException(nameof(pathOrBaseName), "File path or base name cannot be null or empty.");
+            }
+
+            string path = ValidateFileExists(pathOrBaseName);
+
+            using (var fileStream = File.OpenRead(path))
+            {
+                var extension = Path.GetExtension(path);
+                ValidateFileType(extension);
+
+                byte[]? glbBytes = null;
+                string? json = null;
+                byte[]? binary = null;
+
+                if (extension.Equals(".glb", StringComparison.OrdinalIgnoreCase))
+                {
+                    glbBytes = ExtractGLBBytes(fileStream);
+                    json = ExtractJSONFromGLB(glbBytes);
+                    binary = ExtractBinaryFromGLB(glbBytes, json.Length);
+                }
+                else
+                {
+                    json = ExtractJSONFromFile(fileStream);
+                }
+                
                 return LoadFromJsonWithBinary(path, json, binary);
             }
         }
 
-        private static void ValidateFileExists(string path)
+        private static string ValidateFileExists(string pathOrBaseName)
         {
-            if (!File.Exists(path))
+            string gltfPath = pathOrBaseName.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ? pathOrBaseName : pathOrBaseName + ".gltf";
+            string glbPath = pathOrBaseName.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) ? pathOrBaseName : pathOrBaseName + ".glb";
+
+            bool gltfExists = File.Exists(gltfPath);
+            bool glbExists = File.Exists(glbPath);
+
+            // If exact file path is provided and exists
+            if (File.Exists(pathOrBaseName))
             {
-                throw new FileNotFoundException("File not found.", path);
+                return pathOrBaseName;
+            }
+            // If both .gltf and .glb exist and no extension was provided
+            else if (gltfExists && glbExists && !Path.HasExtension(pathOrBaseName))
+            {
+                throw new InvalidOperationException("Both .gltf and .glb files exist. Specify the file extension explicitly.");
+            }
+            else if (gltfExists)
+            {
+                return gltfPath;
+            }
+            else if (glbExists)
+            {
+                return glbPath;
+            }
+            else
+            {
+                throw new FileNotFoundException("Neither .gltf nor .glb file found with the specified name.", pathOrBaseName);
             }
         }
 
         private static void ValidateFileType(string extension)
         {
-            if (!extension.Equals(".gltf") && !extension.Equals(".glb"))
+            if (!extension.Equals(".gltf", StringComparison.OrdinalIgnoreCase) &&
+                !extension.Equals(".glb", StringComparison.OrdinalIgnoreCase))
             {
                 throw new FileLoadException("Invalid file type.");
             }
@@ -112,33 +257,41 @@ namespace HxGLTF
             return binChunkData;
         }
 
-        private static GLTFFile LoadFromJsonWithBinary(string path, string json, byte[]? binary)
+        private static GLTFFile LoadFromJsonWithBinary(string path, string json, byte[] binary = null)
         {
             var jObject = JObject.Parse(json);
 
             // Überprüfe die erforderlichen Elemente
-            if (jObject["asset"] == null || jObject["buffers"] == null || jObject["bufferViews"] == null || jObject["accessors"] == null)
+            if (jObject["asset"] == null)
             {
-                throw new ArgumentException("Die GLTF-Datei enthält nicht alle erforderlichen Elemente.");
+                throw new ArgumentException("gltf file is missing data.");
             }
 
             var asset = LoadAsset(jObject["asset"]);
-            var buffers = LoadBuffers(path, jObject["buffers"]);
-            var bufferViews = LoadBufferViews(jObject["bufferViews"], buffers);
-            var accessors = LoadAccessors(jObject["accessors"], bufferViews);
-            var samplers = LoadSamplers(jObject["samplers"]);
-            var images = LoadImages(path, jObject["images"], bufferViews);
-            var textures = LoadTextures(jObject["textures"], samplers, images);
-            var materials = LoadMaterials(jObject["materials"], textures);
-            var meshes = LoadMeshes(jObject["meshes"], accessors, materials);
-            var nodes = LoadNodes(jObject["nodes"], meshes);
+            var extensionsUsed = LoadExtensionsUsed(jObject["extensionsUsed"]);
+            var buffers = jObject["buffers"] != null ? LoadBuffers(path, jObject["buffers"], binary) : null;
+            var bufferViews = jObject["bufferViews"] != null ? LoadBufferViews(jObject["bufferViews"], buffers) : null;
+            var accessors = jObject["accessors"] != null ? LoadAccessors(jObject["accessors"], bufferViews) : null;
+            var samplers = jObject["samplers"] != null ? LoadSamplers(jObject["samplers"]) : null;
+            var images = jObject["images"] != null ? LoadImages(path, jObject["images"], bufferViews) : null;
+            var textures = jObject["textures"] != null ? LoadTextures(jObject["textures"], samplers, images) : null;
+            var materials = jObject["materials"] != null ? LoadMaterials(jObject["materials"], textures) : null;
+            var meshes = jObject["meshes"] != null ? LoadMeshes(jObject["meshes"], accessors, materials) : null;
+            var nodes = jObject["nodes"] != null ? LoadNodes(jObject["nodes"], meshes) : null;
             var animations = jObject["animations"] != null ? LoadAnimations(jObject["animations"], accessors, nodes) : null;
             var skins = jObject["skins"] != null ? LoadSkins(jObject["skins"], accessors, nodes) : null;
+            var scenes = jObject["scenes"] != null ? LoadScenes(jObject["scenes"], nodes) : null;
+
+            if (nodes != null && skins != null)
+            {
+                LinkNodesAndSkins(nodes, skins);
+            }
 
             return new GLTFFile()
             {
                 Path = path,
                 Asset = asset,
+                ExtensionsUsed = extensionsUsed,
                 Buffers = buffers,
                 BufferViews = bufferViews,
                 Accessors = accessors,
@@ -148,8 +301,9 @@ namespace HxGLTF
                 Materials = materials,
                 Meshes = meshes,
                 Nodes = nodes,
-                //Animations = animations,
-                //Skins = skins,
+                Animations = animations,
+                Skins = skins,
+                Scenes = scenes
             };
         }
 
@@ -171,7 +325,17 @@ namespace HxGLTF
 
             return asset;
         }
+        
+        private static string[] LoadExtensionsUsed(JToken jExtensionsUsed)
+        {
+            if (jExtensionsUsed == null || jExtensionsUsed.Type != JTokenType.Array)
+            {
+                return Array.Empty<string>();
+            }
 
+            return jExtensionsUsed.Select(x => x.ToString()).ToArray();
+        }
+        
         public static Buffer[] LoadBuffers(string path, JToken jBuffers, byte[] array = null)
         {
             var buffers = new Buffer[jBuffers.Count()];
@@ -231,7 +395,7 @@ namespace HxGLTF
                 {
                     Buffer = buffers[(int)jToken["buffer"]],
                     ByteLength = (int)jToken["byteLength"],
-                    ByteOffset = (int)jToken["byteOffset"],
+                    ByteOffset = (int)(jToken["byteOffset"] ?? 0),
                     ByteStride = (int)(jToken["byteStride"] ?? 0)
                 };
             }
@@ -249,8 +413,10 @@ namespace HxGLTF
                     BufferView = bufferViews[(int)jToken["bufferView"]],
                     ByteOffset = (int)(jToken["byteOffset"] ?? 0),
                     Count = (int)jToken["count"],
-                    ComponentType = ComponentType.FromInt((int)jToken["componentType"]),
-                    Type = Type.FromSting((string)jToken["type"])
+                    Normalized = (bool?)jToken["normalized"] ?? false,
+                    DataType = ComponentDataType.FromInt((int)jToken["componentType"]),
+                    StructureType = StructureType.FromSting((string)jToken["type"]),
+                    Name = (string?)jToken["name"] ?? null,
                 };
             }
             return accessors;
@@ -299,6 +465,12 @@ namespace HxGLTF
                 {
                     Uri = (string?)jImage?["uri"]
                 };
+
+                var jImageName = jImage["name"];
+                if (jImageName != null)
+                {
+                    image.Name = jImageName.ToString();
+                }
 
                 if (image.Uri == null)
                 {
@@ -353,21 +525,147 @@ namespace HxGLTF
             var materials = new Material[jMaterials.Count()];
             for (var i = 0; i < jMaterials.Count(); i++)
             {
-                var jToken = (JObject)jMaterials[i];
-                var material = new Material
+                var jMaterial = jMaterials[i];
+                if (jMaterial == null)
                 {
-                    Name = (string)(jToken["name"] ?? string.Empty),
-                    AlphaMode = (string)(jToken["alphaMode"] ?? string.Empty),
-                    DoubleSided = (bool)(jToken["doubleSided"] ?? false)
-                };
+                    throw new Exception();
+                }
 
-                if (jToken.ContainsKey("pbrMetallicRoughness"))
+                var material = new Material();
+                
+                var jName = jMaterial["name"];
+                if (jName != null)
                 {
-                    var pbr = (JObject)jToken["pbrMetallicRoughness"];
-                    if (pbr.ContainsKey("baseColorTexture"))
+                    material.Name = jName.ToString();
+                }
+
+                var jAlphaMode = jMaterial["alphaMode"];
+                if (jAlphaMode != null)
+                {
+                    material.AlphaMode = jAlphaMode.ToString();
+                }
+
+                var jAlphaCutoff = jMaterial["alphaCutoff"];
+                if (jAlphaCutoff != null)
+                {
+                    material.AlphaCutoff = jAlphaCutoff.ToObject<float>();
+                }
+
+                var jDoubleSided = jMaterial["doubleSided"];
+                if (jDoubleSided != null)
+                {
+                    material.DoubleSided = jDoubleSided.ToObject<bool>();
+                }
+
+                var jEmissiveFactor = jMaterial["emissiveFactor"];
+                if (jEmissiveFactor != null)
+                {
+                    var rgb = jEmissiveFactor.ToObject<float[]>();
+                    material.EmissiveFactor = new Color(rgb[0], rgb[1], rgb[2]);
+                }
+                
+                var jEmissiveTextureInfo = jMaterial["emissiveTexture"];
+                if (jEmissiveTextureInfo != null)
+                {
+                    var jIndex = jEmissiveTextureInfo["index"];
+                    if (jIndex == null)
                     {
-                        var baseColorTexture = (JObject)pbr["baseColorTexture"];
-                        //material.PbrMetallicRoughness.BaseColorTexture = textures[(int)baseColorTexture["index"]];
+                        throw new Exception();
+                    }
+
+                    var index = jIndex.ToObject<int>();
+                    material.EmissiveTexture = textures[index];
+                }
+                
+                var jNormalMap = jMaterial["normalTexture"];
+                if (jNormalMap != null)
+                {
+                    var jIndex = jNormalMap["index"];
+                    if (jIndex == null)
+                    {
+                        throw new Exception();
+                    }
+
+                    var index = jIndex.ToObject<int>();
+                    material.NormalTexture = textures[index];
+                }
+                
+                var jPbr = jMaterial["pbrMetallicRoughness"];
+                if (jPbr != null)
+                {
+                    var jBaseColorFactor = jPbr["baseColorFactor"];
+                    if (jBaseColorFactor != null)
+                    {
+                        var rgba = jBaseColorFactor.ToObject<float[]>();
+                        //if (material.Name == "shade")
+                        //{
+                        //    material.BasColorFactor = new Color(0, 0, 0, rgba[3]);
+                        //}
+                        //else
+                        //{
+                        //    material.BasColorFactor = new Color(rgba[0], rgba[1], rgba[2], rgba[3]);
+                        //}
+                        material.BasColorFactor = new Color(rgba[0], rgba[1], rgba[2], rgba[3]);
+                    }
+
+                    var jMetallicFactor = jPbr["metallicFactor"];
+                    if (jMetallicFactor != null)
+                    {
+                        
+                    }
+
+                    var jBaseColorTextureInfo = jPbr["baseColorTexture"];
+                    if (jBaseColorTextureInfo != null)
+                    {
+                        var jIndex = jBaseColorTextureInfo["index"];
+                        if (jIndex == null)
+                        {
+                            throw new Exception();
+                        }
+
+                        var index = jIndex.ToObject<int>();
+                        material.BaseColorTexture = textures[index];
+                    }
+                }
+                
+                var jExtensions = jMaterial["extensions"];
+                if (jExtensions != null)
+                {
+                    var jKHRMaterials = jExtensions["KHR_materials_pbrSpecularGlossiness"];
+                    if (jKHRMaterials != null)
+                    {
+                        var jDiffuseTexture = jKHRMaterials["diffuseTexture"];
+                        if (jDiffuseTexture != null)
+                        {
+                            var jIndex = jDiffuseTexture["index"];
+                            if (jIndex == null)
+                            {
+                                throw new Exception("Invalid diffuse texture index in material " + i);
+                            }
+
+                            var index = jIndex.ToObject<int>();
+                            material.DiffuseTexture = textures[index];
+                        }
+
+                        var jDiffuseFactor = jKHRMaterials["diffuseFactor"];
+                        if (jDiffuseFactor != null)
+                        {
+                            var rgba = jDiffuseFactor.ToObject<float[]>();
+                            material.DiffuseFactor = new Color(rgba[0], rgba[1], rgba[2], rgba[3]);
+                        }
+
+                        var jSpecularFactor = jKHRMaterials["specularFactor"];
+                        if (jSpecularFactor != null)
+                        {
+                            var rgb = jSpecularFactor.ToObject<float[]>();
+                            material.SpecularFactor = new Color(rgb[0], rgb[1], rgb[2], 1);
+                        }
+
+                        var jGlossinessFactor = jKHRMaterials["glossinessFactor"];
+                        if (jGlossinessFactor != null)
+                        {
+                            material.GlossinessFactor = jGlossinessFactor.ToObject<float>();
+                        }
                     }
                 }
 
@@ -388,7 +686,7 @@ namespace HxGLTF
                     throw new Exception($"Mesh at index {a} is null.");
                 }
                 var mesh = new Mesh();
-
+                mesh.Index = a;
                 // Name
                 var jMeshName = jMesh["name"];
                 if (jMeshName != null && jMeshName.Type == JTokenType.String)
@@ -420,7 +718,7 @@ namespace HxGLTF
                         var indicesIndex = jIndices.Value<int>();
                         meshPrimitive.Indices = accessors[indicesIndex];
                     }
-                    
+
                     // Material
                     var jMaterial = jMeshPrimitive["material"];
                     if (jMaterial != null)
@@ -498,6 +796,7 @@ namespace HxGLTF
                     }
 
                     var animationSampler = new AnimationSampler();
+                    animationSampler.Index = b;
 
                     // Input accessor
                     var jAnimationSamplerInput = jAnimationSampler["input"];
@@ -584,8 +883,15 @@ namespace HxGLTF
                     {
                         throw new Exception("Path not found for channel target.");
                     }
-                    animationChannelTarget.Path = jAnimationChannelTargetPath.ToString();
-
+                    
+                    if (Enum.TryParse<AnimationChannelTargetPath>(jAnimationChannelTargetPath.ToString(), ignoreCase: true, out var parsedPath))
+                    {
+                        animationChannelTarget.Path = parsedPath;
+                    }
+                    else
+                    {
+                        throw new ArgumentException($"Invalid path value: {jAnimationChannelTargetPath}", nameof(jAnimationChannelTargetPath));
+                    }
                     animationChannel.Target = animationChannelTarget;
 
                     animationChannels[c] = animationChannel;
@@ -598,6 +904,94 @@ namespace HxGLTF
             }
 
             return animations;
+        }
+
+        private static Scene[] LoadScenes(JToken jScenes)
+        {
+            var sceneCount = jScenes.Count();
+            var scenes = new Scene[sceneCount];
+
+            for (int i = 0; i < sceneCount; i++)
+            {
+                var jScene = jScenes[i];
+                if (jScene == null)
+                {
+                    throw new Exception();
+                }
+                var scene = new Scene();
+
+                var jSceneName = jScene["name"];
+                if (jSceneName != null)
+                {
+                    var sceneName = jSceneName.ToString();
+                    scene.Name = sceneName;
+                }
+
+                var jSceneNodeIndices = jScene["nodes"];
+                if (jSceneNodeIndices != null)
+                {
+                    var sceneNodeIndices = jSceneNodeIndices.Value<int[]>();
+                    scene.NodesIndices = sceneNodeIndices;
+                }
+
+                scenes[i] = scene;
+            }
+
+            return scenes;
+        }
+
+        private static Scene[] LoadScenes(JToken jScenes, Node[] nodes)
+        {
+            var sceneCount = jScenes.Count();
+            var scenes = new Scene[sceneCount];
+
+            for (int i = 0; i < sceneCount; i++)
+            {
+                var jScene = jScenes[i];
+                if (jScene == null)
+                {
+                    throw new Exception();
+                }
+                var scene = new Scene();
+
+                var jSceneName = jScene["name"];
+                if (jSceneName != null)
+                {
+                    var sceneName = jSceneName.ToString();
+                    scene.Name = sceneName;
+                }
+
+                var jSceneNodeIndices = jScene["nodes"];
+                if (jSceneNodeIndices != null)
+                {
+                    var sceneNodeIndices = jSceneNodeIndices.ToObject<int[]>();
+                    scene.NodesIndices = sceneNodeIndices;
+
+                    scene.Nodes = new Node[scene.NodesIndices!.Length];
+                    for (int j = 0; j < scene.NodesIndices.Length; j++) 
+                    {
+                        int nodeIndex = scene.NodesIndices[j];
+                        scene.Nodes[j] = nodes[nodeIndex];
+                    }
+                }
+
+                scenes[i] = scene;
+            }
+
+            return scenes;
+        }
+
+        private static void LinkNodesAndSkins(Node[] nodes, Skin[] skins)
+        {
+            foreach (var node in nodes)
+            {
+                if (node.SkinIndex == -1)
+                {
+                    continue;
+                }
+
+                node.Skin = skins[node.SkinIndex];
+            }
         }
 
         private static Node[] LoadNodes(JToken jNodes, Mesh[] meshes)
@@ -613,17 +1007,27 @@ namespace HxGLTF
                 }
 
                 var node = new Node();
-
+                node.Index = a;
+                
                 var jNodeName = jNode["name"];
                 if (jNodeName != null && jNodeName.Type == JTokenType.String)
                 {
                     node.Name = jNodeName.ToString();
                 }
 
+                var jNodeSkin = jNode["skin"];
+                if (jNodeSkin != null)
+                {
+                    int skinIndex = jNodeSkin.Value<int>();
+                    node.SkinIndex = skinIndex;
+                }
+
                 var jNodeMesh = jNode["mesh"];
                 if (jNodeMesh != null)
                 {
-                    node.Mesh = meshes[jNodeMesh.Value<int>()];
+                    int meshIndex = jNodeMesh.Value<int>();
+                    node.MeshIndex = meshIndex;
+                    node.Mesh = meshes[meshIndex];
                 }
 
                 var jNodeMatrix = jNode["matrix"];
@@ -772,18 +1176,44 @@ namespace HxGLTF
                 {
                     skinJoints[b] = nodes[skinJointsIndices[b]];
                 }
+                skin.JointsIndices = skinJointsIndices;
 
                 var jSkinInverseBindMatrices = jSkin["inverseBindMatrices"];
                 if (jSkinInverseBindMatrices != null)
                 {
                     var inverseBindMatricesIndex = jSkinInverseBindMatrices.Value<int>();
-                    skin.InverseBindMatrices = accessors[inverseBindMatricesIndex];
+                    var accessor = accessors[inverseBindMatricesIndex];
+                    
+                    var matrixData = AccessorReader.ReadData(accessor);
+                    var matrices = new List<Matrix>();
+                    
+                    for (var b = 0; b < matrixData.Length; b += 16)
+                    {
+                        //var matrix = new Matrix(
+                        //    matrixData[b], matrixData[b + 4], matrixData[b + 8], matrixData[b + 12],
+                        //    matrixData[b + 1], matrixData[b + 5], matrixData[b + 9], matrixData[b + 13],
+                        //    matrixData[b + 2], matrixData[b + 6], matrixData[b + 10], matrixData[b + 14],
+                        //    matrixData[b + 3], matrixData[b + 7], matrixData[b + 11], matrixData[b + 15]
+                        //);
+                        
+                        var matrix = new Matrix(
+                            matrixData[b], matrixData[b + 1], matrixData[b + 2], matrixData[b + 3],
+                            matrixData[b + 4], matrixData[b + 5], matrixData[b + 6], matrixData[b + 7],
+                            matrixData[b + 8], matrixData[b + 9], matrixData[b + 10], matrixData[b + 11],
+                            matrixData[b + 12], matrixData[b + 13], matrixData[b + 14], matrixData[b + 15]
+                        );
+                        
+                        matrices.Add(matrix);
+                    }
+                    skin.InverseBindMatrices = matrices.ToArray();
                 }
 
                 var jSkinSkeleton = jSkin["skeleton"];
                 if (jSkinSkeleton != null)
                 {
-                    skin.Skeleton = nodes[jSkinSkeleton.Value<int>()];
+                    var skeletonIndex = jSkinSkeleton.Value<int>();
+                    skin.SkeletonIndex = skeletonIndex;
+                    skin.Skeleton = nodes[skeletonIndex];
                 }
 
                 skin.Joints = skinJoints;

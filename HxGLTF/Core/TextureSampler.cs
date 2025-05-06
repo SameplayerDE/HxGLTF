@@ -1,5 +1,12 @@
-﻿namespace HxGLTF
+﻿namespace HxGLTF.Core
 {
+    // public enum TextureWrapMode
+    // {
+    //     Repeat = 10497,
+    //     ClampToEdge = 33071,
+    //     MirroredRepeat = 33648
+    // }
+    
     public class TextureSampler
     {
         public int WrapS = 10497;

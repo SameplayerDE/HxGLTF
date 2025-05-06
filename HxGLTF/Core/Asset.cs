@@ -1,4 +1,4 @@
-﻿namespace HxGLTF
+﻿namespace HxGLTF.Core
 {
     public struct Asset
     {

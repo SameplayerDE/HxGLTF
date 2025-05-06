@@ -1,6 +1,7 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
-namespace HxGLTF
+namespace HxGLTF.Core
 {
     public class MiMeType
     {
@@ -43,5 +44,6 @@ namespace HxGLTF
         public string? Uri;
         public BufferView? BufferView;
         public MiMeType? MiMeType;
+        public string Name;
     }
 }
